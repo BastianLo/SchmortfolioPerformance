@@ -419,7 +419,6 @@ impl<'a> Writer<'a> {
 
     fn classification(
         &mut self,
-        t: &'a Taxonomy,
         c: &'a Classification,
         tag: &str,
         children: &HashMap<Option<&'a str>, Vec<&'a Classification>>,
@@ -440,7 +439,7 @@ impl<'a> Writer<'a> {
             self.line("<children>");
             self.depth += 1;
             for k in kids {
-                self.classification(t, k, "classification", children);
+                self.classification(k, "classification", children);
             }
             self.depth -= 1;
             self.line("</children>");
@@ -626,7 +625,7 @@ pub fn to_pp_xml(c: &Client) -> String {
             w.line("</dimensions>");
         }
         if let Some(root) = children.get(&None).and_then(|r| r.first().copied()) {
-            w.classification(t, root, "root", &children);
+            w.classification(root, "root", &children);
         }
         w.depth -= 1;
         w.line("</taxonomy>");
