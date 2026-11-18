@@ -2391,7 +2391,7 @@ checksum = "4a6394b9e965e73d0a289ee54f589087e2c676aedf60885baf52c76b771e4958"
 
 [[package]]
 name = "pp-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "approx",
  "chrono",
@@ -2405,7 +2405,7 @@ dependencies = [
 
 [[package]]
 name = "pp-db"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "pp-core",
@@ -2420,7 +2420,7 @@ dependencies = [
 
 [[package]]
 name = "pp-import"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes 0.8.4",
  "cbc 0.1.2",
@@ -2447,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "pp-quotes"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "chrono",
@@ -2465,7 +2465,7 @@ dependencies = [
 
 [[package]]
 name = "pp-server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "argon2",

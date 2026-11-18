@@ -347,20 +347,27 @@ Die Zeitangaben gelten grob für eine Person in Teilzeit mit KI-Unterstützung. 
 
 ---
 
-## 18. Umsetzungsstand (2026-11-18)
+## 18. Umsetzungsstand
+
+### Version 1.0.0 (2026-11-18)
 
 | Meilenstein | Stand |
 |---|---|
-| M0 Fundament | ✅ Workspace, Frontend-Gerüst, Dockerfile (multi-stage, distroless), compose, GitHub Actions (Rust, Web, OpenAPI-Abgleich, Multi-Arch-Image) |
-| M1 Modell, Persistenz, API, Auth | ✅ inkl. OIDC (PKCE, Gruppen, Admin-Gruppe, RP-Logout); Tests mit einem simulierten Identity Provider |
-| M2 PP-Import | ✅ XML (Pfad- und ID-Referenzen), Protobuf, AES-verschlüsselt, ZIP, Migrationen alter Versionen; Testkorpus aus der PP-Testsuite |
-| M3 Rechenkern I | ✅ Snapshot, FIFO/Durchschnitt, realisierte und nicht realisierte G/V, Erträge; Golden Tests cent-genau |
-| M4 Rechenkern II + UI | ✅ TTWROR, IRR, Drawdown, Volatilität (PP-identisch auf 10⁻¹⁰), alle Auswertungsseiten, PWA, mobile Ansicht |
+| M0 Fundament | ✅ Workspace, Frontend-Gerüst, Dockerfile (Multi-Stage, Distroless), compose, GitHub Actions (Rust, Web, OpenAPI-Abgleich, Multi-Arch-Image) |
+| M1 Modell, Persistenz, API, Auth | ✅ inklusive OIDC (PKCE, Gruppen, Admin-Gruppe, RP-Logout), getestet mit einem simulierten Identity Provider |
+| M2 PP-Import | ✅ XML (Pfad- und ID-Referenzen), Protobuf, AES-verschlüsselt, ZIP, Migrationen alter Versionen |
+| M3/M4 Rechenkern + Auswertungen | ✅ Golden Tests cent-genau, IRR auf 10⁻⁸, Volatilität auf 10⁻¹⁰ genau wie PP |
+| M5 Erfassung + Kurse | ✅ alle Buchungsarten inklusive Fremdwährung und Umbuchungen, Bearbeiten; Kursquellen mit Hintergrundjob |
+| M6 Mobile + PWA | ✅ mobile Layouts ohne horizontales Scrollen, Tab-Leiste, installierbar, Offline-Lesecache |
+| M7 Import-Ausbau | ✅ PDF-Regelengine (4 Banken, 26 Referenzbelege, echte PDFs über lopdf), CSV-Assistent, Duplikaterkennung, Belege, PP-XML-Export mit Roundtrip-Test |
+| v1.0 | ✅ Klassifizierungen bearbeiten + Rebalancing, Watchlists, Sparpläne, Filter, Benutzerverwaltung, API-Tokens, Backups, Dokumentation |
 
 **Abweichungen vom Plan und offene Punkte**
-- Transaktions-Units werden als JSON-Spalte gespeichert statt in einer eigenen Tabelle (einfacher, für Auswertungen ohne Nachteil).
-- Nur SQLite; Postgres ist weiterhin optional geplant.
-- Die Aufteilung der Kursgewinne in Kurs- und Währungsgewinne wie in PP fehlt noch; realisierte Gewinne werden über FIFO ermittelt.
-- Performance je Depot, Konto oder Filter (PP-„Client-Filter“) fehlt noch; Auswertungen gelten für das ganze Portfolio.
-- Buchungen in Fremdwährung sowie Umbuchungen und Einlieferungen können noch nicht erfasst werden (Import und Auswertung funktionieren); das folgt mit M5.
-- Der Docker-Build wurde lokal nicht ausgeführt (kein Docker-Daemon in der Entwicklungsumgebung); die CI baut das Image.
+- Transaktions-Units liegen als JSON-Spalte vor statt in einer eigenen Tabelle; Sparpläne ebenfalls als JSON.
+- Nur SQLite; Postgres ist weiterhin optional.
+- Die Kursgewinne werden noch nicht wie in PP in Kurs- und Währungsanteil aufgeteilt.
+- PDF-Regeln: vier statt fünf bis zehn Banken. comdirect fehlt, weil deren PDFs gesperrt formatierten Text liefern.
+- Der PP-XML-Export ist gegen den eigenen Importer getestet, nicht gegen PP selbst (kein Java in der Entwicklungsumgebung).
+- Der Docker-Build wurde lokal nicht ausgeführt (kein Docker-Daemon); die CI baut das Image.
+- Oberfläche nur auf Deutsch; i18n (Englisch) folgt.
+- Offline-Erfassung (local-first) und Web-Push folgen mit M8.

@@ -8,19 +8,30 @@ Selbsthostbare Neuimplementierung von [Portfolio Performance](https://www.portfo
 |---|---|---|
 | ![](docs/screenshots/performance.png) | ![](docs/screenshots/dashboard-dark.png) | ![](docs/screenshots/mobile-holdings.png) |
 
-## Stand (Meilensteine M0–M4)
+## Funktionen (Version 1.0)
 
-- **Import aus Portfolio Performance:** XML mit relativen und ID-Referenzen, Binärformat (Protobuf), verschlüsselte Dateien (AES-128/256) und ZIP. Alte Dateiversionen werden automatisch migriert, Skalierung von Stückzahlen und Kursen eingeschlossen.
-- **Rechenkern mit PP-identischen Ergebnissen:** Vermögensaufstellung, FIFO- und Durchschnittseinstand, realisierte und nicht realisierte Gewinne, TTWROR, IZF (IRR), Drawdown und Volatilität. Geprüft wird mit Golden Tests gegen die Erwartungswerte aus PPs eigener Testsuite (cent-genau, IRR auf 10⁻⁸ genau).
-- **Auswertungen:** Übersicht, Vermögensaufstellung (mit Stichtag), Performance mit Monats- und Jahresrenditen, Erträge, Klassifizierungen, Wertpapiere mit Kursverlauf, Konten und Depots, Buchungen.
-- **Erfassung:** Einlagen, Entnahmen, Käufe, Verkäufe, Dividenden, Zinsen, Gebühren und Steuern. Käufe und Verkäufe werden als Buchungspaar angelegt; Fremdwährungsbuchungen sind noch nicht möglich.
-- **Wechselkurse:** EZB-Referenzkurse werden automatisch geladen. Fehlt ein Kurs, wird er aus den Wechselkursen in den Buchungen abgeleitet.
-- **Login:** lokale Konten oder OIDC/SSO (Authentik, Authelia, Keycloak, Pocket ID, …) mit PKCE, Gruppen-Freigabe, Admin-Gruppe und Abmeldung beim Provider.
-- **Oberfläche:** PWA (installierbar, Offline-Lesecache), mobile Ansicht mit Tab-Leiste, helles und dunkles Design.
-- **API:** REST-API mit OpenAPI-Dokumentation unter `/api/docs`; der TypeScript-Client wird daraus generiert.
-- **Demo-Portfolio:** fünf Jahre generierte Beispieldaten zum Ausprobieren.
+- **Umstieg von Portfolio Performance:** Import von XML-, Binär-, verschlüsselten und ZIP-Dateien aller
+  Versionen, inklusive Klassifizierungen, Watchlists und Sparplänen. Export zurück als PP-XML.
+- **Gleiche Zahlen wie PP:** TTWROR, IZF, FIFO-Einstand, Drawdown und Volatilität; Golden Tests gegen PPs
+  eigene Testsuite.
+- **Auswertungen:** Übersicht, Vermögensaufstellung mit Stichtag, Performance mit Monatsrenditen, Erträge,
+  Klassifizierungen mit Rebalancing; Filter auf einzelne Depots und Konten.
+- **Erfassung:** alle Buchungsarten inklusive Fremdwährung, Umbuchungen und Depotwechsel; Bearbeiten per Klick;
+  Sparpläne mit automatischer Ausführung.
+- **Kurse:** Yahoo Finance, JSON, HTML-Tabelle, CoinGecko, Alpha Vantage, manuell oder per Einfügen aus Excel;
+  EZB-Wechselkurse.
+- **Import:** PDF-Belege über YAML-Regeln (Trade Republic, Scalable Capital, ING, DKB, eigene Regeln), CSV mit
+  Spaltenzuordnung, Duplikaterkennung, Original-PDF als Beleg.
+- **Betrieb:** lokale Anmeldung oder OIDC/SSO, mehrere Benutzer, API-Tokens (z. B. für Home Assistant), tägliche
+  Backups, PWA mit Offline-Lesezugriff, mobile Ansicht, dunkles Design. Ein Docker-Container mit SQLite.
 
-Was als Nächstes kommt, steht im Umsetzungsplan unter [docs/PLAN.md](docs/PLAN.md) (M5ff.: Kurs-Feeds, PDF-Import, Fremdwährungsbuchungen, …).
+Dokumentation:
+
+- [Benutzerhandbuch](docs/user-guide.md)
+- [Eigene PDF-Regeln](docs/pdf-rules.md)
+- [Änderungen](CHANGELOG.md)
+- [Umsetzungsplan](docs/PLAN.md)
+- API-Dokumentation unter `/api/docs`
 
 ## Schnellstart mit Docker
 
@@ -43,6 +54,8 @@ Die Daten liegen in `./data` (SQLite).
 | `PP_DISABLE_LOCAL_LOGIN` | `false` | Nur SSO zulassen |
 | `PP_SESSION_DAYS` | `30` | Gültigkeit der Sitzung in Tagen |
 | `PP_ECB_UPDATE` | `true` | EZB-Kurse automatisch laden |
+| `PP_QUOTE_UPDATE` | `true` | Wertpapierkurse alle 6 Stunden aktualisieren |
+| `PP_BACKUP_KEEP` | `14` | Anzahl täglicher Backups (`0` = aus) |
 | `PP_MAX_UPLOAD_MB` | `200` | Maximale Größe beim Import |
 | `PP_LOG` / `PP_LOG_FORMAT` | `info` / Text | Log-Filter, `json` für strukturierte Logs |
 
@@ -78,12 +91,12 @@ Aufbau des Repositorys:
 
 ```
 crates/pp-core     Domänenmodell und Berechnungen (ohne IO)
-crates/pp-import   Import von PP-Dateien
+crates/pp-import   Import/Export von PP-Dateien, PDF-Regelengine (rules/)
 crates/pp-db       SQLite-Persistenz
-crates/pp-quotes   Kurs- und Wechselkursquellen (EZB)
+crates/pp-quotes   Kursquellen und EZB-Wechselkurse
 crates/pp-server   HTTP-API, Authentifizierung, Jobs, eingebettetes Frontend
 web/               React-PWA
-testdata/pp        Referenzdateien aus der PP-Testsuite (EPL-1.0)
+testdata/          Referenzdateien und Belegtexte aus der PP-Testsuite (EPL-1.0)
 ```
 
 ## Lizenz

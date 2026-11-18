@@ -25,7 +25,7 @@ pub const ECB_90D_XML: &str = "https://www.ecb.europa.eu/stats/eurofxref/eurofxr
 
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .user_agent("SchmortfolioPerformance/0.1")
+        .user_agent("SchmortfolioPerformance/1.0")
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .expect("http client")

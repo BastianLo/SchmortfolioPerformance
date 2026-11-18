@@ -25,7 +25,7 @@ use crate::state::SharedState;
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "SchmortfolioPerformance API", version = "0.1.0",
+    info(title = "SchmortfolioPerformance API", version = "1.0.0",
          description = "Selbsthostbare Portfolio-Verwaltung, kompatibel zu Portfolio Performance. Geldbeträge sind ganze Zahlen in Hundertsteln (Cent), Stückzahlen und Kurse in 10^-8."),
     servers((url = "/api/v1")),
     tags(

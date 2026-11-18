@@ -14,10 +14,10 @@ axum-extra = { version = "0.12.6", features = ["cookie"] }
 base64 = "0.22"
 chrono = { version = "0.4.45", features = ["serde"] }
 openidconnect = { version = "4.1.0", default-features = false, features = ["reqwest", "rustls-tls"] }
-pp-core = { version = "0.1.0", path = "../pp-core", features = ["openapi"] }
-pp-db = { version = "0.1.0", path = "../pp-db" }
-pp-import = { version = "0.1.0", path = "../pp-import" }
-pp-quotes = { version = "0.1.0", path = "../pp-quotes" }
+pp-core = { path = "../pp-core", features = ["openapi"] }
+pp-db = { path = "../pp-db" }
+pp-import = { path = "../pp-import" }
+pp-quotes = { path = "../pp-quotes" }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rust-embed = { version = "8.14.0", features = ["mime-guess"] }
