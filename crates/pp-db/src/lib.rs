@@ -105,6 +105,14 @@ fn meta_from_row(r: &sqlx::sqlite::SqliteRow) -> ClientMeta {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct Attachment {
+    pub file_hash: String,
+    pub file_name: String,
+    pub content_type: String,
+    pub size: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct FeedStatus {
     pub last_run: String,
     pub ok: bool,
@@ -847,6 +855,67 @@ impl Db {
         }
         tx.commit().await?;
         self.bump_version(client_id).await
+    }
+
+    // ---------------------------------------------------------- attachments
+
+    pub async fn add_attachment(&self, client_id: &str, tx_id: &str, a: &Attachment) -> Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO attachments (client_id, transaction_id, file_hash, file_name, content_type, size, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(client_id)
+        .bind(tx_id)
+        .bind(&a.file_hash)
+        .bind(&a.file_name)
+        .bind(&a.content_type)
+        .bind(a.size)
+        .bind(now())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Attachments of a client, keyed by transaction id.
+    pub async fn attachments(
+        &self,
+        client_id: &str,
+    ) -> Result<std::collections::HashMap<String, Vec<Attachment>>> {
+        let rows = sqlx::query("SELECT * FROM attachments WHERE client_id = ? ORDER BY created_at")
+            .bind(client_id)
+            .fetch_all(&self.pool)
+            .await?;
+        let mut m: std::collections::HashMap<String, Vec<Attachment>> = Default::default();
+        for r in rows {
+            m.entry(r.get("transaction_id"))
+                .or_default()
+                .push(Attachment {
+                    file_hash: r.get("file_hash"),
+                    file_name: r.get("file_name"),
+                    content_type: r.get("content_type"),
+                    size: r.get("size"),
+                });
+        }
+        Ok(m)
+    }
+
+    pub async fn attachment_by_hash(
+        &self,
+        client_id: &str,
+        hash: &str,
+    ) -> Result<Option<Attachment>> {
+        let r =
+            sqlx::query("SELECT * FROM attachments WHERE client_id = ? AND file_hash = ? LIMIT 1")
+                .bind(client_id)
+                .bind(hash)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(r.map(|r| Attachment {
+            file_hash: r.get("file_hash"),
+            file_name: r.get("file_name"),
+            content_type: r.get("content_type"),
+            size: r.get("size"),
+        }))
     }
 
     // ---------------------------------------------------------- quote feeds

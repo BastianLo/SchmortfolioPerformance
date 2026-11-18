@@ -11,14 +11,17 @@ aes = "0.8"
 cbc = "0.1"
 chrono = "0.4.45"
 hmac = "0.12"
+lopdf = "0.47.0"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
 pp-core = { version = "0.1.0", path = "../pp-core" }
 prost = "0.14.6"
 prost-types = "0.14.6"
+regex = "1.13.2"
 roxmltree = "0.21.2"
 rust_decimal = "1.43.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_yaml = "0.9.34"
 sha1 = "0.10"
 thiserror = "2.0.21"
 uuid = "1.26.1"

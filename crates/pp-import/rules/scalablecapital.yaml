@@ -1,0 +1,34 @@
+# Scalable Capital – Wertpapierabrechnungen und Dividenden
+bank: Scalable Capital
+detect:
+  - 'Scalable Capital (?:Bank )?GmbH'
+documents:
+  - name: Wertpapierabrechnung
+    match: '^Wertpapierabrechnung'
+    kind:
+      capture: side
+      map: { Kauf: BUY, Verkauf: SELL, Sparplan: BUY }
+    derive_fees: true
+    fields:
+      - '^Ausführung (?<date>\d{2}\.\d{2}\.\d{4}) (?<time>\d{2}:\d{2}:\d{2})'
+      - '^(?<side>Kauf|Verkauf|Sparplan) (?<name>.+?) (?<shares>[\d.,]+) Stk\. [\d.,]+ (?<sec_currency>[A-Z]{3}) (?<gross>[\d.,]+) (?<gross_cur>[A-Z]{3})$'
+      - '^(?<isin>[A-Z]{2}[A-Z0-9]{9}\d)\s*$'
+      - '^(?:Total|Belastung|Gutschrift) -?(?<amount>[\d.,]+) (?<amount_cur>[A-Z]{3})$'
+      - pattern: '^(?:Ordergebühren|Fremdkostenzuschlag|Börsengebühr) [+-]?(?<fee>[\d.,]+) (?<fee_cur>[A-Z]{3})$'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidaritätszuschlag|Kirchensteuer|Steuern) -(?<tax>[\d.,]+) (?<tax_cur>[A-Z]{3})$'
+        optional: true
+
+  - name: Dividende
+    match: '^(?:Dividende|Ausschüttung|Zinszahlung)\s*$'
+    kind:
+      fixed: DIVIDENDS
+    fields:
+      - '^Berechtigtes Wertpapier (?<name>.+?)\s*$'
+      - '^ISIN (?<isin>[A-Z]{2}[A-Z0-9]{9}\d)'
+      - '^(?<date>\d{2}\.\d{2}\.\d{4}) \d{2}\.\d{2}\.\d{4} Gutschrift [\d.,]+ (?<sec_currency>[A-Z]{3}) (?<shares>[\d.,]+) [\d.,]+ [A-Z]{3}'
+      - pattern: '^[A-Z]{3} / [A-Z]{3} (?<fxi>[\d.,]+)'
+        optional: true
+      - '^Gesamtbetrag -?(?<amount>[\d.,]+) (?<amount_cur>[A-Z]{3})'
+      - pattern: '^(?:Ausländische Quellensteuer|Steuern|Kapitalertragsteuer|Solidaritätszuschlag|Kirchensteuer) -(?<tax>[\d.,]+) (?<tax_cur>[A-Z]{3})$'
+        optional: true

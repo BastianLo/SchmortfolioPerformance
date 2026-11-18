@@ -1,0 +1,36 @@
+# DKB (Deutsche Kreditbank) – Wertpapierabrechnungen und Erträge
+bank: DKB
+detect:
+  - 'BYLADEM1001|Deutsche Kreditbank|DKB AG'
+documents:
+  - name: Wertpapierabrechnung
+    match: '^Wertpapier Abrechnung (?:Kauf|Verkauf|Ausgabe Investmentfonds|Rücknahme Investmentfonds)'
+    kind:
+      capture: side
+      map: { Kauf: BUY, Verkauf: SELL, Ausgabe Investmentfonds: BUY, Rücknahme Investmentfonds: SELL }
+    fields:
+      - '^Wertpapier Abrechnung (?<side>Kauf|Verkauf|Ausgabe Investmentfonds|Rücknahme Investmentfonds)'
+      - '^Stück (?<shares>[\d.,]+) (?<name>.+?) (?<isin>[A-Z]{2}[A-Z0-9]{9}\d) \((?<wkn>[A-Z0-9]{6})\)'
+      - '^Schlusstag(?:/-Zeit)? (?<date>\d{2}\.\d{2}\.\d{4})(?: (?<time>\d{2}:\d{2}:\d{2}))?'
+      - '^Ausmachender Betrag (?<amount>[\d.,]+)-? (?<amount_cur>[A-Z]{3})'
+      - pattern: '^(?:Provision|Transaktionsentgelt Börse|Übertragungs-/Liefergebühr|Handelsentgelt|Börsengebühr|Maklercourtage|Fremde Spesen) (?<fee>[\d.,]+)- (?<fee_cur>[A-Z]{3})$'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidaritätszuschlag|Kirchensteuer)[^\n]* (?<tax>[\d.,]+)- (?<tax_cur>[A-Z]{3})$'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidaritätszuschlag|Kirchensteuer) [\d.,]+ ?% auf [\d.,]+ [A-Z]{3} (?<refund>[\d.,]+) (?<refund_cur>[A-Z]{3})$'
+        optional: true
+
+  - name: Ertrag
+    match: '^(?:Dividendengutschrift|Ausschüttung Investmentfonds|Ertragsgutschrift|Gutschrift von Investmenterträgen)'
+    kind:
+      fixed: DIVIDENDS
+    fields:
+      - '^Stück (?<shares>[\d.,]+) (?<name>.+?) (?<isin>[A-Z]{2}[A-Z0-9]{9}\d) \((?<wkn>[A-Z0-9]{6})\)'
+      - '^Zahlbarkeitstag (?<date>\d{2}\.\d{2}\.\d{4})'
+      - '^Ausmachender Betrag (?<amount>[\d.,]+)\+? (?<amount_cur>[A-Z]{3})'
+      - pattern: '(?:Dividende pro Stück|Ausschüttung pro Stück|Ertrag pro St\.) [\d.,]+ (?<sec_currency>[A-Z]{3})'
+        optional: true
+      - pattern: '^Devisenkurs [A-Z]{3} / [A-Z]{3} (?<fxi>[\d.,]+)'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidaritätszuschlag|Kirchensteuer|Einbehaltene Quellensteuer|Anrechenbare Quellensteuer)[^\n]* (?<tax>[\d.,]+) ?- (?<tax_cur>[A-Z]{3})$'
+        optional: true

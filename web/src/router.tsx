@@ -9,6 +9,7 @@ import { ClientsPage } from "./pages/clients";
 import { DashboardPage } from "./pages/dashboard";
 import { EarningsPage } from "./pages/earnings";
 import { HoldingsPage } from "./pages/holdings";
+import { ImportPage } from "./pages/import";
 import { LoginPage } from "./pages/login";
 import { PerformancePage } from "./pages/performance";
 import { SecuritiesPage } from "./pages/securities";
@@ -89,6 +90,7 @@ const taxonomiesRoute = createRoute({
   component: TaxonomiesPage,
 });
 const settingsRoute = createRoute({ getParentRoute: () => clientRoute, path: "/settings", component: SettingsPage });
+const importRoute = createRoute({ getParentRoute: () => clientRoute, path: "/import", component: ImportPage });
 const transactionsRoute = createRoute({
   getParentRoute: () => clientRoute,
   path: "/transactions",
@@ -111,6 +113,7 @@ const routeTree = rootRoute.addChildren([
       securityRoute,
       accountsRoute,
       transactionsRoute,
+      importRoute,
       earningsRoute,
       taxonomiesRoute,
       settingsRoute,

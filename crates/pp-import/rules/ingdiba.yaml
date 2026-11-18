@@ -1,0 +1,40 @@
+# ING (ING-DiBa) – Wertpapierabrechnungen und Dividenden
+bank: ING
+detect:
+  - 'ING-DiBa|ING Bank|ing-diba\.de|ing\.de'
+documents:
+  - name: Wertpapierabrechnung
+    match: '^Wertpapierabrechnung (?:Kauf|Verkauf)'
+    kind:
+      capture: side
+      map: { Kauf: BUY, Verkauf: SELL }
+    fields:
+      - '^Wertpapierabrechnung (?<side>Kauf|Verkauf)'
+      - '^ISIN \(WKN\) (?<isin>[A-Z]{2}[A-Z0-9]{9}\d) \((?<wkn>[A-Z0-9]{6})\)'
+      - '^Wertpapierbezeichnung (?<name>.+)$'
+      - '^Nominale St.{1,2}ck (?<shares>[\d.,]+)'
+      - '^Ausf.{1,2}hrungstag(?: / -zeit)? (?<date>\d{2}\.\d{2}\.\d{4})(?: um (?<time>\d{2}:\d{2}:\d{2}))?'
+      - '^Endbetrag zu Ihren (?:Lasten|Gunsten) (?<amount_cur>[A-Z]{3}) -?(?<amount>[\d.,]+)'
+      - pattern: '^(?:Provision|Handelsplatzgeb.{1,2}hr|B.{1,2}rsengeb.{1,2}hr|Handelsentgelt|Fremde Spesen|Maklercourtage|Transaktionsentgelt[^\n]*|Ausgabeaufschlag[^\n]*) (?<fee_cur>[A-Z]{3}) (?<fee>[\d.,]+)'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidarit.{1,2}tszuschlag|Kirchensteuer)[^\n]* (?<tax_cur>[A-Z]{3}) (?<tax>[\d.,]+)$'
+        optional: true
+
+  - name: Dividende
+    match: '^(?:Dividendengutschrift|Ertragsgutschrift|Zinsgutschrift)'
+    kind:
+      fixed: DIVIDENDS
+    fields:
+      - '^ISIN \(WKN\) (?<isin>[A-Z]{2}[A-Z0-9]{9}\d) \((?<wkn>[A-Z0-9]{6})\)'
+      - '^Wertpapierbezeichnung (?<name>.+)$'
+      - '^Nominale (?<shares>[\d.,]+) St.{1,2}ck'
+      - '^Zahltag (?<date>\d{2}\.\d{2}\.\d{4})'
+      - pattern: '^Brutto (?<sec_currency>[A-Z]{3}) [\d.,]+'
+        optional: true
+      - pattern: '^Umg\. z\. Dev\.-Kurs \((?<fxi>[\d.,]+)\)'
+        optional: true
+      - '^Gesamtbetrag zu Ihren Gunsten (?<amount_cur>[A-Z]{3}) (?<amount>[\d.,]+)'
+      - pattern: '^QuSt [\d.,]+ % \((?<tax_cur>[A-Z]{3}) (?<tax>[\d.,]+)\)'
+        optional: true
+      - pattern: '^(?:Kapitalertragsteuer|Solidarit.{1,2}tszuschlag|Kirchensteuer)[^\n]* (?<tax_cur>[A-Z]{3}) (?<tax>[\d.,]+)$'
+        optional: true

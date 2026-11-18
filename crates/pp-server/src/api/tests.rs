@@ -15,7 +15,10 @@ use crate::state::AppState;
 fn test_config() -> Config {
     Config {
         bind: "127.0.0.1:0".into(),
-        data_dir: ".".into(),
+        data_dir: std::env::temp_dir()
+            .join(format!("pp-test-{}", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .into(),
         database_url: "sqlite::memory:".into(),
         public_url: "http://localhost:8080".into(),
         session_days: 30,
@@ -867,4 +870,129 @@ async fn quote_update_from_yahoo_mock() {
     .await;
     assert_eq!(sec.json["security"]["latest_price"], 7_770_000_000i64);
     assert_eq!(sec.json["security"]["feed_status"]["ok"], true);
+}
+
+#[tokio::test]
+async fn pdf_import_preview_commit_and_attachment() {
+    let (app, _) = app_with(test_config(), None).await;
+    let cookie = setup_admin(&app).await;
+    let id = call(&app, "POST", "/api/v1/clients/demo", None, Some(&cookie))
+        .await
+        .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // multipart with a real PDF and a text document
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/pdf");
+    let files = [
+        ("generated/traderepublic_Kauf01.pdf", "Kauf.pdf"),
+        ("traderepublic/Dividende02.txt", "Dividende.txt"),
+    ];
+    let boundary = "XBOUNDARYX";
+    let mut body = Vec::new();
+    for (f, name) in files {
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n").as_bytes());
+        body.extend_from_slice(&std::fs::read(root.join(f)).unwrap());
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/clients/{id}/imports/pdf/preview"))
+        .header(header::COOKIE, &cookie)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let preview: Value =
+        serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let items = preview["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["bank"], "Trade Republic");
+    assert_eq!(items[0]["transactions"][0]["kind"], "BUY");
+    assert!(
+        items[0]["transactions"][0]["security_id"].is_null(),
+        "new security"
+    );
+    assert_eq!(items[1]["transactions"][0]["kind"], "DIVIDENDS");
+
+    let commit_items: Vec<Value> = items
+        .iter()
+        .map(|i| json!({"tx": i["transactions"][0], "file_name": i["file_name"], "file_hash": i["file_hash"]}))
+        .collect();
+    let r = call(&app, "POST", &format!("/api/v1/clients/{id}/imports/commit"),
+        Some(json!({"account_id": "demo-acc-main", "portfolio_id": "demo-pf", "items": commit_items})), Some(&cookie)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
+    assert_eq!(r.json["created"], 2, "{:?}", r.json);
+    assert_eq!(r.json["securities_created"], 2);
+
+    let txs = call(
+        &app,
+        "GET",
+        &format!(
+            "/api/v1/clients/{id}/transactions?from=2019-05-13&to=2019-05-13&owner_kind=portfolio"
+        ),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    let t = &txs.json["items"][0];
+    assert_eq!(t["amount"], 2505);
+    assert_eq!(t["fees"], 100);
+    let hash = t["attachments"][0]["file_hash"]
+        .as_str()
+        .expect("attachment")
+        .to_string();
+    let req = Request::builder()
+        .uri(format!("/api/v1/clients/{id}/files/{hash}"))
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .starts_with(b"%PDF")
+    );
+
+    // the dividend in USD got an exchange rate (security currency USD)
+    let div = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/transactions?types=DIVIDENDS&from=2019-09-12&to=2019-09-12"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(div.json["items"][0]["amount"], 310);
+    assert_eq!(div.json["items"][0]["taxes"], 106);
+
+    // importing again is detected as duplicate
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/clients/{id}/imports/pdf/preview"))
+        .header(header::COOKIE, &cookie)
+        .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from({
+            let mut b = Vec::new();
+            b.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"x.pdf\"\r\n\r\n").as_bytes());
+            b.extend_from_slice(&std::fs::read(root.join(files[0].0)).unwrap());
+            b.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+            b
+        }))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let again: Value =
+        serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert!(again["items"][0]["transactions"][0]["duplicate_of"].is_string());
+    assert!(again["items"][0]["transactions"][0]["security_id"].is_string());
 }

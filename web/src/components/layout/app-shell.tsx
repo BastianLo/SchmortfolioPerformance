@@ -15,6 +15,7 @@ import {
   Settings,
   Sun,
   TrendingUp,
+  Upload,
   Wallet,
 } from "lucide-react";
 import * as React from "react";
@@ -34,6 +35,7 @@ const NAV = [
   { to: "/c/$clientId/transactions", label: "Buchungen", icon: ArrowLeftRight, mobile: true },
   { to: "/c/$clientId/securities", label: "Wertpapiere", icon: BarChart3 },
   { to: "/c/$clientId/accounts", label: "Konten & Depots", icon: Wallet },
+  { to: "/c/$clientId/import", label: "Import", icon: Upload },
   { to: "/c/$clientId/earnings", label: "Erträge", icon: Coins },
   { to: "/c/$clientId/taxonomies", label: "Klassifizierungen", icon: PieChart },
   { to: "/c/$clientId/settings", label: "Einstellungen", icon: Settings },

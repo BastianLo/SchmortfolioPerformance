@@ -216,6 +216,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients/{id}/files/{hash}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Downloads an attached document. */
+        get: operations["download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/imports/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Creates the transactions (and missing securities) of a preview. */
+        post: operations["commit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/imports/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Matches transactions (e.g. from a CSV file) with existing securities and
+         *     detects duplicates.
+         */
+        post: operations["match_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/imports/pdf/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reads PDF (or text) documents and returns the recognised transactions. */
+        post: operations["preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/clients/{id}/portfolios": {
         parameters: {
             query?: never;
@@ -552,6 +623,10 @@ export interface components {
             /** Format: int32 */
             weight: number;
         };
+        AttachmentDto: {
+            file_hash: string;
+            file_name: string;
+        };
         AuthConfig: {
             local_login: boolean;
             oidc: boolean;
@@ -635,6 +710,22 @@ export interface components {
             /** Format: int64 */
             pp_version: number;
             updated_at: string;
+        };
+        CommitItem: {
+            /** @description hash of the uploaded PDF (attached to the transaction) */
+            file_hash?: string | null;
+            file_name?: string | null;
+            tx: components["schemas"]["PreviewTx"];
+        };
+        CommitRequest: {
+            account_id: string;
+            items: components["schemas"]["CommitItem"][];
+            portfolio_id?: string | null;
+        };
+        CommitResult: {
+            created: number;
+            errors: string[];
+            securities_created: number;
         };
         Counts: {
             accounts: number;
@@ -838,6 +929,28 @@ export interface components {
             /** @description URL of the identity provider to end the SSO session, if available */
             redirect?: string | null;
         };
+        MatchItem: {
+            /** Format: int64 */
+            amount: number;
+            currency: string;
+            /** Format: date-time */
+            date_time: string;
+            exchange_rate?: string | null;
+            /** Format: int64 */
+            fees?: number;
+            isin?: string | null;
+            kind: string;
+            name?: string | null;
+            security_currency?: string | null;
+            /** Format: int64 */
+            shares?: number;
+            /** Format: int64 */
+            taxes?: number;
+            wkn?: string | null;
+        };
+        MatchRequest: {
+            items: components["schemas"]["MatchItem"][];
+        };
         Me: {
             display_name?: string | null;
             email?: string | null;
@@ -845,6 +958,20 @@ export interface components {
             is_admin: boolean;
             sso: boolean;
             username: string;
+        };
+        PdfPreview: {
+            items: components["schemas"]["PdfPreviewItem"][];
+            rule_errors: string[];
+        };
+        PdfPreviewItem: {
+            bank?: string | null;
+            document?: string | null;
+            errors: string[];
+            file_hash: string;
+            file_name: string;
+            /** @description extracted text if the document could not be read (for writing rules) */
+            text?: string | null;
+            transactions: components["schemas"]["PreviewTx"][];
         };
         PerformanceKpis: {
             /** Format: int64 */
@@ -936,6 +1063,31 @@ export interface components {
             note?: string | null;
             reference_account?: string | null;
             retired?: boolean;
+        };
+        PreviewTx: {
+            /** Format: int64 */
+            amount: number;
+            currency: string;
+            /** Format: date-time */
+            date_time: string;
+            /** @description an existing transaction that looks identical */
+            duplicate_of?: string | null;
+            /** @description security currency → account currency */
+            exchange_rate?: string | null;
+            /** Format: int64 */
+            fees: number;
+            isin?: string | null;
+            /** @description BUY, SELL, DIVIDENDS, … */
+            kind: string;
+            name?: string | null;
+            security_currency?: string | null;
+            /** @description matched existing security (otherwise a new one is created) */
+            security_id?: string | null;
+            /** Format: int64 */
+            shares: number;
+            /** Format: int64 */
+            taxes: number;
+            wkn?: string | null;
         };
         PriceInput: {
             /** Format: date */
@@ -1127,6 +1279,8 @@ export interface components {
         TransactionRow: {
             /** Format: int64 */
             amount: number;
+            /** @description attached documents (file hashes, see `/clients/{id}/files/{hash}`) */
+            attachments: components["schemas"]["AttachmentDto"][];
             currency: string;
             /** Format: date-time */
             date_time: string;
@@ -1592,6 +1746,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                hash: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+        };
+    };
+    commit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitResult"];
+                };
+            };
+        };
+    };
+    match_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewTx"][];
+                };
+            };
+        };
+    };
+    preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description one or more `files` (PDF or extracted text) */
+        requestBody?: {
+            content: {
+                "multipart/form-data": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PdfPreview"];
+                };
             };
         };
     };

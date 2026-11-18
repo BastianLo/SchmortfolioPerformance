@@ -4,6 +4,7 @@ mod clients;
 mod data;
 mod dto;
 mod fx;
+mod imports;
 mod reports;
 
 pub use dto::today;
@@ -41,6 +42,7 @@ fn api_router() -> OpenApiRouter<SharedState> {
         .merge(data::router())
         .merge(reports::router())
         .merge(fx::router())
+        .merge(imports::router())
 }
 
 pub fn openapi_json() -> String {

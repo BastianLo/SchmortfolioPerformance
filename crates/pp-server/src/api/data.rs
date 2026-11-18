@@ -201,12 +201,14 @@ async fn get_security(
     let conv = c.converter();
     let snap = ClientSnapshot::create(&c.client, &conv, today());
     let records = SecurityPerformance::calculate(&c.client, &conv, NaiveDate::MIN, today());
-    let rows = transaction_rows(
+    let attachments = state.db.attachments(&id).await?;
+    let rows = transaction_rows_with(
         &c,
         &TxFilter {
             security: Some(sid.clone()),
             ..Default::default()
         },
+        &attachments,
     );
     let status = state.db.feed_status(&id).await?;
     let cfg = crate::quotes::feed_config(s);
@@ -652,6 +654,14 @@ pub struct TransactionRow {
     pub other_owner_name: Option<String>,
     /// signed effect on the owner: cash (accounts) or shares (portfolios)
     pub sign: i32,
+    /// attached documents (file hashes, see `/clients/{id}/files/{hash}`)
+    pub attachments: Vec<AttachmentDto>,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+pub struct AttachmentDto {
+    pub file_hash: String,
+    pub file_name: String,
 }
 
 #[derive(Deserialize, IntoParams, Default)]
@@ -669,7 +679,11 @@ pub struct TxFilter {
     pub q: Option<String>,
 }
 
-pub(crate) fn transaction_rows(c: &LoadedClient, f: &TxFilter) -> Vec<TransactionRow> {
+pub(crate) fn transaction_rows_with(
+    c: &LoadedClient,
+    f: &TxFilter,
+    attachments: &HashMap<String, Vec<pp_db::Attachment>>,
+) -> Vec<TransactionRow> {
     let names: HashMap<&str, &str> = c
         .client
         .accounts
@@ -754,6 +768,22 @@ pub(crate) fn transaction_rows(c: &LoadedClient, f: &TxFilter) -> Vec<Transactio
                 .and_then(|ce| names.get(ce.other_owner.as_str()))
                 .map(|s| s.to_string()),
             sign,
+            attachments: attachments
+                .get(&t.id)
+                .or_else(|| {
+                    t.cross_entry
+                        .as_ref()
+                        .and_then(|ce| attachments.get(&ce.other_transaction))
+                })
+                .map(|v| {
+                    v.iter()
+                        .map(|a| AttachmentDto {
+                            file_hash: a.file_hash.clone(),
+                            file_name: a.file_name.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         });
     };
     for a in &c.client.accounts {
@@ -814,7 +844,8 @@ async fn list_transactions(
     Query(page): Query<PageQuery>,
 ) -> ApiResult<Json<TransactionPage>> {
     let c = state.client(&user, &id).await?;
-    let rows = transaction_rows(&c, &f);
+    let attachments = state.db.attachments(&id).await?;
+    let rows = transaction_rows_with(&c, &f, &attachments);
     let total = rows.len();
     let limit = page.limit.unwrap_or(500).min(10_000);
     let items = rows.into_iter().skip(page.offset).take(limit).collect();

@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Paperclip, Plus, Search, Trash2 } from "lucide-react";
 import * as React from "react";
 import type { Schemas } from "@/api/client";
 import { useAccounts, useDeleteTransaction, usePortfolios, useTransactions } from "@/api/hooks";
@@ -60,7 +60,20 @@ export function TransactionsPage() {
         accessorKey: "security_name",
         header: "Wertpapier / Notiz",
         cell: ({ row }) => (
-          <div className="max-w-72 truncate">
+          <div className="flex max-w-72 items-center gap-1 truncate">
+            {row.original.attachments.map((a) => (
+              <a
+                key={a.file_hash}
+                href={`/api/v1/clients/${clientId}/files/${a.file_hash}`}
+                target="_blank"
+                rel="noreferrer"
+                title={a.file_name}
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0 text-muted hover:text-accent"
+              >
+                <Paperclip className="size-3.5" />
+              </a>
+            ))}
             {row.original.security_name ?? (
               <span className="text-muted">{row.original.note ?? row.original.other_owner_name ?? ""}</span>
             )}
@@ -116,7 +129,7 @@ export function TransactionsPage() {
         ),
       },
     ],
-    [del],
+    [del, clientId],
   );
 
   const items = React.useMemo(() => {

@@ -1,0 +1,37 @@
+# Trade Republic Bank GmbH – Wertpapierabrechnungen, Sparpläne, Dividenden
+bank: Trade Republic
+detect:
+  - 'TRADE REPUBLIC BANK GMBH|Trade Republic Bank GmbH'
+documents:
+  - name: Wertpapierabrechnung
+    match: '^WERTPAPIERABRECHNUNG'
+    kind:
+      capture: side
+      map: { Kauf: BUY, Verkauf: SELL, Sparplanausführung: BUY }
+    fields:
+      - '(?<side>Kauf|Verkauf|Sparplanausführung) am (?<date>\d{2}\.\d{2}\.\d{4})(?:, um (?<time>\d{2}:\d{2}) Uhr)?'
+      - '^(?<name>.+?) (?<shares>[\d.,]+) Stk\. [\d.,]+ (?<sec_currency>[A-Z]{3}) [\d.,]+ [A-Z]{3}$'
+      - '^(?:ISIN: )?(?<isin>[A-Z]{2}[A-Z0-9]{9}\d)$'
+      - pattern: '^GESAMT -?(?<amount>[\d.,]+) (?<amount_cur>[A-Z]{3})$'
+        last: true
+      - pattern: '^(?:Fremdkostenzuschlag|Fremdkostenpauschale|Gebühr|Ordergebühr) -(?<fee>[\d.,]+) (?<fee_cur>[A-Z]{3})$'
+        optional: true
+      - pattern: '^(?:Kapitalertragss?teuer|Solidaritätszuschlag|Kirchensteuer|Quellensteuer[^\n]*?) -(?<tax>[\d.,]+) (?<tax_cur>[A-Z]{3})$'
+        optional: true
+      - pattern: '^(?:Kapitalertragss?teuer|Solidaritätszuschlag|Kirchensteuer) Optimierung (?<refund>[\d.,]+) (?<refund_cur>[A-Z]{3})$'
+        optional: true
+
+  - name: Dividende
+    match: '(?:Ausschüttung|Dividende) mit dem Ex-Tag'
+    kind:
+      fixed: DIVIDENDS
+    fields:
+      - '^VERRECHNUNGSKONTO VALUTA BETRAG\n\S+ (?<date>\d{2}\.\d{2}\.\d{4})'
+      - '^(?<name>.+?) (?<shares>[\d.,]+) Stk\. [\d.,]+ (?<sec_currency>[A-Z]{3}) [\d.,]+ [A-Z]{3}$'
+      - '^(?:ISIN: )?(?<isin>[A-Z]{2}[A-Z0-9]{9}\d)$'
+      - pattern: '^GESAMT -?(?<amount>[\d.,]+) (?<amount_cur>[A-Z]{3})$'
+        last: true
+      - pattern: '^Zwischensumme (?<fxi>[\d.,]+) [A-Z]{3}/[A-Z]{3} '
+        optional: true
+      - pattern: '^(?:Kapitalertragss?teuer|Solidaritätszuschlag|Kirchensteuer|Quellensteuer[^\n]*?) -(?<tax>[\d.,]+) (?<tax_cur>[A-Z]{3})$'
+        optional: true
