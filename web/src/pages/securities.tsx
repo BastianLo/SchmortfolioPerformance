@@ -1,80 +1,20 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Search } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, Search } from "lucide-react";
 import * as React from "react";
 import { api, type Schemas, unwrap } from "@/api/client";
 import { useInvalidateClient, useSecurities } from "@/api/hooks";
+import { SecurityDialog } from "@/components/security-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/input";
-import { Badge, ErrorBox, PageHeader, Segmented, Skeleton } from "@/components/ui/misc";
+import { Input } from "@/components/ui/input";
+import { Badge, ErrorBox, PageHeader, Segmented, Skeleton, Spinner } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
 import { date, money, percent, quote, shares, tone } from "@/lib/format";
 
 type Row = Schemas["SecurityDto"];
-
-function NewSecurityDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const clientId = useClientId();
-  const invalidate = useInvalidateClient(clientId);
-  const [form, setForm] = React.useState({ name: "", isin: "", wkn: "", ticker: "", currency: "EUR" });
-  const [error, setError] = React.useState<unknown>(null);
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm({ ...form, [k]: e.target.value });
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await unwrap(
-        api.POST("/clients/{id}/securities", {
-          params: { path: { id: clientId } },
-          body: {
-            name: form.name,
-            isin: form.isin || null,
-            wkn: form.wkn || null,
-            ticker: form.ticker || null,
-            currency: form.currency || null,
-          },
-        }),
-      );
-      await invalidate();
-      onOpenChange(false);
-    } catch (err) {
-      setError(err);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Neues Wertpapier">
-      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <Field label="Name">
-            <Input value={form.name} onChange={set("name")} required autoFocus />
-          </Field>
-        </div>
-        <Field label="ISIN">
-          <Input value={form.isin} onChange={set("isin")} maxLength={12} />
-        </Field>
-        <Field label="WKN">
-          <Input value={form.wkn} onChange={set("wkn")} />
-        </Field>
-        <Field label="Ticker">
-          <Input value={form.ticker} onChange={set("ticker")} />
-        </Field>
-        <Field label="Währung">
-          <Input value={form.currency} onChange={set("currency")} maxLength={3} />
-        </Field>
-        {error != null && (
-          <div className="sm:col-span-2">
-            <ErrorBox error={error} />
-          </div>
-        )}
-        <div className="flex justify-end sm:col-span-2">
-          <Button type="submit">Anlegen</Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
 
 export function SecuritiesPage() {
   const clientId = useClientId();
@@ -83,6 +23,20 @@ export function SecuritiesPage() {
   const [q, setQ] = React.useState("");
   const [filter, setFilter] = React.useState<"held" | "all" | "retired">("held");
   const [open, setOpen] = React.useState(false);
+  const [updating, setUpdating] = React.useState(false);
+  const [results, setResults] = React.useState<Schemas["QuoteUpdateResult"][] | null>(null);
+  const invalidate = useInvalidateClient(clientId);
+  const updateAll = async () => {
+    setUpdating(true);
+    try {
+      setResults(
+        await unwrap(api.POST("/clients/{id}/quotes/update", { params: { path: { id: clientId } }, body: {} })),
+      );
+      invalidate();
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const rows = React.useMemo(() => {
     const ql = q.toLowerCase();
@@ -152,7 +106,17 @@ export function SecuritiesPage() {
         accessorKey: "feed",
         header: "Quelle",
         meta: { hideMobile: true },
-        cell: (c) => <span className="text-xs text-muted">{c.getValue<string>() ?? "–"}</span>,
+        cell: ({ row }) => (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted"
+            title={row.original.feed_status?.message ?? undefined}
+          >
+            {row.original.feed_status && !row.original.feed_status.ok && (
+              <AlertTriangle className="size-3.5 text-warn" />
+            )}
+            {row.original.feed ?? "–"}
+          </span>
+        ),
       },
     ],
     [],
@@ -164,10 +128,16 @@ export function SecuritiesPage() {
         title="Wertpapiere"
         subtitle={data ? `${data.length} Wertpapiere` : undefined}
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus />
-            Wertpapier
-          </Button>
+          <>
+            <Button variant="outline" onClick={updateAll} disabled={updating}>
+              {updating ? <Spinner className="size-4" /> : <RefreshCw />}
+              Kurse aktualisieren
+            </Button>
+            <Button onClick={() => setOpen(true)}>
+              <Plus />
+              Wertpapier
+            </Button>
+          </>
         }
       />
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -221,7 +191,29 @@ export function SecuritiesPage() {
           />
         </Card>
       )}
-      <NewSecurityDialog open={open} onOpenChange={setOpen} />
+      <SecurityDialog
+        open={open}
+        onOpenChange={setOpen}
+        onCreated={(sid) =>
+          navigate({ to: "/c/$clientId/securities/$securityId", params: { clientId, securityId: sid } })
+        }
+      />
+      <Dialog open={!!results} onOpenChange={(o) => !o && setResults(null)} title="Kursaktualisierung">
+        <ul className="max-h-[60dvh] divide-y divide-border overflow-y-auto text-sm">
+          {results?.length === 0 && (
+            <li className="py-2 text-muted">Keine Wertpapiere mit automatischer Kursquelle.</li>
+          )}
+          {results?.map((r) => (
+            <li key={r.security_id} className="flex items-start justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{r.name}</div>
+                <div className={r.ok ? "text-xs text-muted" : "text-xs text-neg"}>{r.ok ? `${r.feed}` : r.message}</div>
+              </div>
+              <span className={r.ok ? "tabular text-pos" : "text-neg"}>{r.ok ? `+${r.new_prices}` : "Fehler"}</span>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
     </>
   );
 }

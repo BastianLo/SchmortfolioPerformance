@@ -1,6 +1,7 @@
 //! Pure domain logic of SchmortfolioPerformance: data model, valuation and
 //! performance calculations. No IO, no clock, no database.
 
+pub mod booking;
 pub mod fx;
 pub mod index;
 pub mod math;

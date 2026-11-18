@@ -1,10 +1,15 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LineChart, Pencil, Plus, RefreshCw } from "lucide-react";
 import * as React from "react";
-import { useClient, usePrices, useSecurity } from "@/api/hooks";
+import { api, unwrap } from "@/api/client";
+import { useClient, useInvalidateClient, usePrices, useSecurity } from "@/api/hooks";
+import { BookingDialog } from "@/components/booking-dialog";
 import { PriceChart } from "@/components/charts/presets";
+import { PriceDialog } from "@/components/price-dialog";
+import { SecurityDialog } from "@/components/security-dialog";
+import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Badge, ErrorBox, PageHeader, Segmented, Skeleton, Stat } from "@/components/ui/misc";
+import { Badge, ErrorBox, PageHeader, Segmented, Skeleton, Spinner, Stat } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
 import { date, money, percent, quote, shares, TX_LABELS, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -23,6 +28,30 @@ export function SecurityDetailPage() {
   const { data: prices } = usePrices(clientId, securityId);
   const { data: client } = useClient(clientId);
   const cur = client?.base_currency ?? "EUR";
+  const [edit, setEdit] = React.useState(false);
+  const [book, setBook] = React.useState(false);
+  const [priceOpen, setPriceOpen] = React.useState(false);
+  const [updating, setUpdating] = React.useState(false);
+  const [updateMsg, setUpdateMsg] = React.useState<string | null>(null);
+  const invalidate = useInvalidateClient(clientId);
+  const updateQuotes = async () => {
+    setUpdating(true);
+    setUpdateMsg(null);
+    try {
+      const r = await unwrap(
+        api.POST("/clients/{id}/quotes/update", {
+          params: { path: { id: clientId } },
+          body: { security_id: securityId },
+        }),
+      );
+      setUpdateMsg(r[0] ? (r[0].ok ? `${r[0].new_prices} neue Kurse geladen` : (r[0].message ?? "Fehler")) : null);
+      invalidate();
+    } catch (e) {
+      setUpdateMsg((e as Error).message);
+    } finally {
+      setUpdating(false);
+    }
+  };
   const [range, setRange] = React.useState<(typeof RANGES)[number]["key"]>("3y");
 
   const shown = React.useMemo(() => {
@@ -70,7 +99,33 @@ export function SecurityDetailPage() {
             {s.retired && <Badge>inaktiv</Badge>}
           </span>
         }
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setEdit(true)}>
+              <Pencil /> Bearbeiten
+            </Button>
+            <Button variant="outline" onClick={() => setPriceOpen(true)}>
+              <LineChart /> Kurse erfassen
+            </Button>
+            <Button variant="outline" onClick={updateQuotes} disabled={updating || !s.feed}>
+              {updating ? <Spinner className="size-4" /> : <RefreshCw />} Aktualisieren
+            </Button>
+            <Button onClick={() => setBook(true)}>
+              <Plus /> Buchen
+            </Button>
+          </>
+        }
       />
+      {s.feed_status && (
+        <p className={cn("-mt-2 mb-4 text-xs", s.feed_status.ok ? "text-muted" : "text-neg")}>
+          Kursquelle {s.feed}:{" "}
+          {s.feed_status.ok ? `zuletzt aktualisiert ${date(s.feed_status.last_run)}` : s.feed_status.message}
+        </p>
+      )}
+      {updateMsg && <p className="-mt-2 mb-4 text-xs text-muted">{updateMsg}</p>}
+      {edit && <SecurityDialog open onOpenChange={setEdit} existing={data} />}
+      <BookingDialog key={`book-${book}`} open={book} onOpenChange={setBook} preset={{ securityId: s.id }} />
+      <PriceDialog open={priceOpen} onOpenChange={setPriceOpen} securityId={s.id} currency={s.currency} />
       <div className="space-y-4">
         <Card>
           <CardBody>

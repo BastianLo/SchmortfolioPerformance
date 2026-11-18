@@ -109,6 +109,7 @@ export function SettingsPage() {
             )}
           </CardBody>
         </Card>
+        {me?.is_admin && <FeedSettingsCard />}
         <Card>
           <CardHeader title="Über" />
           <CardBody className="space-y-2 text-sm text-muted">
@@ -127,5 +128,48 @@ export function SettingsPage() {
         </Card>
       </div>
     </>
+  );
+}
+
+function FeedSettingsCard() {
+  const [key, setKey] = React.useState("");
+  const [isSet, setIsSet] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  React.useEffect(() => {
+    unwrap(api.GET("/settings/feeds")).then((s) => setIsSet(!!s.alphavantage_api_key_set));
+  }, []);
+  const save = async () => {
+    await unwrap(api.PUT("/settings/feeds", { body: { alphavantage_api_key: key } }));
+    setIsSet(!!key);
+    setKey("");
+    setSaved(true);
+  };
+  return (
+    <Card>
+      <CardHeader title="Kursquellen" subtitle="Kurse werden alle 6 Stunden automatisch aktualisiert." />
+      <CardBody className="space-y-3 text-sm">
+        <Field
+          label="Alpha Vantage API-Key"
+          hint={
+            isSet
+              ? "Ein Key ist hinterlegt. Leer speichern entfernt ihn."
+              : "Kostenlos unter alphavantage.co erhältlich."
+          }
+        >
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={isSet ? "••••••••" : ""}
+            />
+            <Button variant="outline" onClick={save}>
+              Speichern
+            </Button>
+          </div>
+        </Field>
+        {saved && <p className="text-xs text-pos">Gespeichert.</p>}
+      </CardBody>
+    </Card>
   );
 }

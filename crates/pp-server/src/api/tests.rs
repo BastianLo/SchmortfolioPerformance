@@ -24,6 +24,7 @@ fn test_config() -> Config {
         admin_password: None,
         disable_local_login: false,
         ecb_update: false,
+        quote_update: false,
         max_upload_mb: 50,
         oidc: None,
     }
@@ -412,6 +413,133 @@ async fn demo_client_and_transactions() {
         StatusCode::NO_CONTENT
     );
 
+    // forex buy of the USD security needs an exchange rate
+    let body = json!({"kind": "BUY", "account_id": acc, "portfolio_id": "demo-pf", "security_id": "demo-sec-4",
+                      "date_time": "2024-05-06T00:00:00", "amount": 100000, "shares": 600000000, "fees": 500});
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/transactions"),
+        Some(body.clone()),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let mut body = body;
+    body["exchange_rate"] = json!("0.92");
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/transactions"),
+        Some(body),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json);
+    let fx = r.json.as_str().unwrap().to_string();
+    // editing via the account side returns the portfolio side booking
+    let txs = call(&app, "GET", &format!("/api/v1/clients/{id}/transactions?types=BUY&owner_kind=account&from=2024-05-06&to=2024-05-06"), None, Some(&cookie)).await;
+    let account_side = txs.json["items"][0]["id"].as_str().unwrap().to_string();
+    let b = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/transactions/{account_side}"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(b.json["id"], fx);
+    assert_eq!(b.json["booking"]["exchange_rate"], "0.92");
+    let mut booking = b.json["booking"].clone();
+    booking["amount"] = json!(200000);
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/clients/{id}/transactions/{account_side}"),
+        Some(booking),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
+    let txs = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/transactions?types=BUY&from=2024-05-06&to=2024-05-06"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(txs.json["total"], 2);
+    assert!(
+        txs.json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["amount"] == 200000)
+    );
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/clients/{id}/transactions/{fx}"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // master data
+    let r = call(&app, "PUT", &format!("/api/v1/clients/{id}/securities/demo-sec-0"),
+        Some(json!({"name": "Welt ETF", "isin": "zzdemo000011", "retired": false, "feed": "YAHOO", "ticker": "WLD.DE"})), Some(&cookie)).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let sec = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/securities/demo-sec-0"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(sec.json["security"]["name"], "Welt ETF");
+    assert_eq!(sec.json["security"]["isin"], "ZZDEMO000011");
+    assert!(
+        sec.json["security"]["prices"].as_u64().unwrap() > 1000,
+        "prices kept"
+    );
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/clients/{id}/accounts/{acc}"),
+        Some(json!({"name": "Giro", "currency": "USD"})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/clients/{id}/accounts/{acc}"),
+        Some(json!({"name": "Giro"})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let accounts = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/accounts"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(accounts.json[0]["name"], "Giro");
+    assert!(
+        accounts.json[0]["transactions"].as_u64().unwrap() > 50,
+        "transactions kept"
+    );
+
     // deleting an account with transactions is refused
     let r = call(
         &app,
@@ -679,4 +807,64 @@ async fn oidc_group_restriction() {
         "/login?error=sso_forbidden"
     );
     assert!(r.headers.get(header::SET_COOKIE).is_none());
+}
+
+#[tokio::test]
+async fn quote_update_from_yahoo_mock() {
+    use axum::routing::get;
+    let today = crate::api::today();
+    let ts = today.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+    let body = format!(
+        r#"{{"chart":{{"result":[{{"meta":{{"regularMarketPrice":77.7,"regularMarketTime":{ts}}},"timestamp":[{ts}],"indicators":{{"quote":[{{"close":[77.5]}}]}}}}]}}}}"#
+    );
+    let mock = Router::new().route("/v8/finance/chart/{t}", get(move || async move { body }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    // SAFETY: tests in this module do not read this variable concurrently
+    unsafe { std::env::set_var("PP_YAHOO_URL", &base) };
+
+    let (app, _) = app_with(test_config(), None).await;
+    let cookie = setup_admin(&app).await;
+    let id = call(&app, "POST", "/api/v1/clients/demo", None, Some(&cookie))
+        .await
+        .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/clients/{id}/securities/demo-sec-1"),
+        Some(json!({"name": "Europa Dividenden ETF", "feed": "YAHOO", "ticker": "EUDIV.DE"})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/quotes/update"),
+        Some(json!({})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
+    let items = r.json.as_array().unwrap();
+    assert_eq!(
+        items.len(),
+        1,
+        "only securities with a supported feed: {items:?}"
+    );
+    assert_eq!(items[0]["ok"], true, "{items:?}");
+    let sec = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/securities/demo-sec-1"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(sec.json["security"]["latest_price"], 7_770_000_000i64);
+    assert_eq!(sec.json["security"]["feed_status"]["ok"], true);
 }

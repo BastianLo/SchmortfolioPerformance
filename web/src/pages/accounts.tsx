@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Briefcase, Plus, Trash2, Wallet } from "lucide-react";
+import { Briefcase, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import * as React from "react";
 import { api, unwrap } from "@/api/client";
 import { useAccounts, useClient, useInvalidateClient, usePortfolios } from "@/api/hooks";
@@ -15,23 +15,48 @@ function CreateDialog({
   kind,
   open,
   onOpenChange,
+  existing,
 }: {
   kind: "account" | "portfolio";
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  existing?: {
+    id: string;
+    name: string;
+    currency?: string;
+    note?: string | null;
+    retired: boolean;
+    reference_account?: string | null;
+  };
 }) {
   const clientId = useClientId();
   const { data: client } = useClient(clientId);
   const { data: accounts } = useAccounts(clientId);
   const invalidate = useInvalidateClient(clientId);
-  const [name, setName] = React.useState("");
-  const [currency, setCurrency] = React.useState(client?.base_currency ?? "EUR");
-  const [reference, setReference] = React.useState("");
+  const [name, setName] = React.useState(existing?.name ?? "");
+  const [currency, setCurrency] = React.useState(existing?.currency ?? client?.base_currency ?? "EUR");
+  const [reference, setReference] = React.useState(existing?.reference_account ?? "");
+  const [note, setNote] = React.useState(existing?.note ?? "");
+  const [retired, setRetired] = React.useState(existing?.retired ?? false);
   const [error, setError] = React.useState<unknown>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (kind === "account")
+      if (existing && kind === "account")
+        await unwrap(
+          api.PUT("/clients/{id}/accounts/{aid}", {
+            params: { path: { id: clientId, aid: existing.id } },
+            body: { name, currency, note: note || null, retired },
+          }),
+        );
+      else if (existing)
+        await unwrap(
+          api.PUT("/clients/{id}/portfolios/{pid}", {
+            params: { path: { id: clientId, pid: existing.id } },
+            body: { name, reference_account: reference || null, note: note || null, retired },
+          }),
+        );
+      else if (kind === "account")
         await unwrap(
           api.POST("/clients/{id}/accounts", { params: { path: { id: clientId } }, body: { name, currency } }),
         );
@@ -50,7 +75,19 @@ function CreateDialog({
     }
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={kind === "account" ? "Neues Konto" : "Neues Depot"}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        existing
+          ? kind === "account"
+            ? "Konto bearbeiten"
+            : "Depot bearbeiten"
+          : kind === "account"
+            ? "Neues Konto"
+            : "Neues Depot"
+      }
+    >
       <form onSubmit={submit} className="space-y-4">
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
@@ -70,9 +107,25 @@ function CreateDialog({
             </Select>
           </Field>
         )}
+        {existing && (
+          <>
+            <Field label="Notiz">
+              <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            </Field>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={retired}
+                onChange={(e) => setRetired(e.target.checked)}
+                className="size-4"
+              />
+              Inaktiv
+            </label>
+          </>
+        )}
         {error != null && <ErrorBox error={error} />}
         <div className="flex justify-end">
-          <Button type="submit">Anlegen</Button>
+          <Button type="submit">{existing ? "Speichern" : "Anlegen"}</Button>
         </div>
       </form>
     </Dialog>
@@ -86,6 +139,17 @@ export function AccountsPage() {
   const { data: client } = useClient(clientId);
   const invalidate = useInvalidateClient(clientId);
   const [dialog, setDialog] = React.useState<"account" | "portfolio" | null>(null);
+  const [editing, setEditing] = React.useState<{
+    kind: "account" | "portfolio";
+    item: {
+      id: string;
+      name: string;
+      currency?: string;
+      note?: string | null;
+      retired: boolean;
+      reference_account?: string | null;
+    };
+  } | null>(null);
   const [error, setError] = React.useState<unknown>(null);
   const cur = client?.base_currency ?? "EUR";
 
@@ -144,8 +208,16 @@ export function AccountsPage() {
                 <div className="tabular text-right text-sm font-medium">{money(a.balance, a.currency)}</div>
                 <button
                   type="button"
+                  onClick={() => setEditing({ kind: "account", item: a })}
+                  className="cursor-pointer p-1 text-muted sm:opacity-0 sm:group-hover:opacity-100"
+                  aria-label="Bearbeiten"
+                >
+                  <Pencil className="size-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => remove("accounts", a.id, a.name)}
-                  className="cursor-pointer p-1 text-muted opacity-0 group-hover:opacity-100"
+                  className="cursor-pointer p-1 text-muted sm:opacity-0 sm:group-hover:opacity-100"
                   aria-label="Löschen"
                 >
                   <Trash2 className="size-4" />
@@ -187,8 +259,16 @@ export function AccountsPage() {
                 <div className="tabular text-right text-sm font-medium">{money(p.value, cur)}</div>
                 <button
                   type="button"
+                  onClick={() => setEditing({ kind: "portfolio", item: p })}
+                  className="cursor-pointer p-1 text-muted sm:opacity-0 sm:group-hover:opacity-100"
+                  aria-label="Bearbeiten"
+                >
+                  <Pencil className="size-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => remove("portfolios", p.id, p.name)}
-                  className="cursor-pointer p-1 text-muted opacity-0 group-hover:opacity-100"
+                  className="cursor-pointer p-1 text-muted sm:opacity-0 sm:group-hover:opacity-100"
                   aria-label="Löschen"
                 >
                   <Trash2 className="size-4" />
@@ -199,6 +279,15 @@ export function AccountsPage() {
         </Card>
       </div>
       {dialog && <CreateDialog kind={dialog} open onOpenChange={(o) => !o && setDialog(null)} />}
+      {editing && (
+        <CreateDialog
+          key={editing.item.id}
+          kind={editing.kind}
+          existing={editing.item}
+          open
+          onOpenChange={(o) => !o && setEditing(null)}
+        />
+      )}
     </>
   );
 }

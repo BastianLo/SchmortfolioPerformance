@@ -6,6 +6,8 @@ mod dto;
 mod fx;
 mod reports;
 
+pub use dto::today;
+
 use axum::extract::DefaultBodyLimit;
 use axum::routing::get;
 use axum::{Json, Router};

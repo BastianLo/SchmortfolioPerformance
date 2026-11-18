@@ -104,6 +104,14 @@ fn meta_from_row(r: &sqlx::sqlite::SqliteRow) -> ClientMeta {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct FeedStatus {
+    pub last_run: String,
+    pub ok: bool,
+    pub message: Option<String>,
+    pub new_prices: i64,
+}
+
 pub struct NewUser<'a> {
     pub username: &'a str,
     pub email: Option<&'a str>,
@@ -733,57 +741,62 @@ impl Db {
         self.bump_version(client_id).await
     }
 
-    pub async fn insert_account_tx(
+    /// Deletes `delete` (with their counterparts) and inserts `insert`, in
+    /// one database transaction.
+    pub async fn replace_transactions(
         &self,
         client_id: &str,
-        owner: &str,
-        t: &AccountTransaction,
+        delete: &[String],
+        insert: &[pp_core::booking::StoredTx],
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        insert_tx(
-            &mut tx,
-            client_id,
-            "account",
-            owner,
-            t.kind.as_str(),
-            &t.common,
-            t.ex_date.as_ref(),
-        )
-        .await?;
-        tx.commit().await?;
-        self.bump_version(client_id).await
-    }
-
-    /// Inserts a buy/sell pair.
-    pub async fn insert_buy_sell(
-        &self,
-        client_id: &str,
-        portfolio: &str,
-        ptx: &PortfolioTransaction,
-        account: &str,
-        atx: &AccountTransaction,
-    ) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
-        insert_tx(
-            &mut tx,
-            client_id,
-            "portfolio",
-            portfolio,
-            ptx.kind.as_str(),
-            &ptx.common,
-            None,
-        )
-        .await?;
-        insert_tx(
-            &mut tx,
-            client_id,
-            "account",
-            account,
-            atx.kind.as_str(),
-            &atx.common,
-            None,
-        )
-        .await?;
+        for id in delete {
+            let other: Option<Option<String>> = sqlx::query_scalar(
+                "SELECT cross_tx FROM transactions WHERE client_id = ? AND id = ?",
+            )
+            .bind(client_id)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let Some(other) = other else {
+                return Err(DbError::NotFound);
+            };
+            for i in std::iter::once(id.clone()).chain(other) {
+                sqlx::query("DELETE FROM transactions WHERE client_id = ? AND id = ?")
+                    .bind(client_id)
+                    .bind(i)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        for t in insert {
+            match t {
+                pp_core::booking::StoredTx::Account { owner, tx: t } => {
+                    insert_tx(
+                        &mut tx,
+                        client_id,
+                        "account",
+                        owner,
+                        t.kind.as_str(),
+                        &t.common,
+                        t.ex_date.as_ref(),
+                    )
+                    .await?
+                }
+                pp_core::booking::StoredTx::Portfolio { owner, tx: t } => {
+                    insert_tx(
+                        &mut tx,
+                        client_id,
+                        "portfolio",
+                        owner,
+                        t.kind.as_str(),
+                        &t.common,
+                        None,
+                    )
+                    .await?
+                }
+            }
+        }
         tx.commit().await?;
         self.bump_version(client_id).await
     }
@@ -834,6 +847,75 @@ impl Db {
         }
         tx.commit().await?;
         self.bump_version(client_id).await
+    }
+
+    // ---------------------------------------------------------- quote feeds
+
+    pub async fn set_latest(
+        &self,
+        client_id: &str,
+        security_id: &str,
+        latest: &LatestSecurityPrice,
+    ) -> Result<()> {
+        sqlx::query("UPDATE securities SET latest = ? WHERE client_id = ? AND id = ?")
+            .bind(serde_json::to_string(latest)?)
+            .bind(client_id)
+            .bind(security_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_feed_status(
+        &self,
+        client_id: &str,
+        security_id: &str,
+        ok: bool,
+        message: Option<&str>,
+        new_prices: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO feed_status (client_id, security_id, last_run, ok, message, new_prices) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(client_id)
+        .bind(security_id)
+        .bind(now())
+        .bind(ok as i64)
+        .bind(message)
+        .bind(new_prices)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn feed_status(
+        &self,
+        client_id: &str,
+    ) -> Result<std::collections::HashMap<String, FeedStatus>> {
+        let rows = sqlx::query("SELECT * FROM feed_status WHERE client_id = ?")
+            .bind(client_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.get::<String, _>("security_id"),
+                    FeedStatus {
+                        last_run: r.get("last_run"),
+                        ok: r.get::<i64, _>("ok") != 0,
+                        message: r.get("message"),
+                        new_prices: r.get("new_prices"),
+                    },
+                )
+            })
+            .collect())
+    }
+
+    pub async fn all_client_ids(&self) -> Result<Vec<String>> {
+        Ok(sqlx::query_scalar("SELECT id FROM clients")
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     // ------------------------------------------------------ exchange rates

@@ -4,6 +4,7 @@ mod config;
 mod demo;
 mod error;
 mod jobs;
+mod quotes;
 mod state;
 mod web;
 

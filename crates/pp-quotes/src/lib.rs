@@ -2,6 +2,8 @@
 //!
 //! Currently: ECB euro foreign exchange reference rates.
 
+pub mod feeds;
+
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::str::FromStr;

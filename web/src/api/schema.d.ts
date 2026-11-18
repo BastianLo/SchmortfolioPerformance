@@ -208,7 +208,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        put: operations["update_account"];
         post?: never;
         delete: operations["delete_account"];
         options?: never;
@@ -240,9 +240,26 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        put: operations["update_portfolio"];
         post?: never;
         delete: operations["delete_portfolio"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/quotes/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetches new prices from the configured quote feeds. */
+        post: operations["update_quotes"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -352,7 +369,8 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_security"];
-        put?: never;
+        /** Updates the master data of a security (prices and events are kept). */
+        put: operations["update_security"];
         post?: never;
         delete: operations["delete_security"];
         options?: never;
@@ -401,6 +419,7 @@ export interface paths {
         };
         get: operations["list_transactions"];
         put?: never;
+        /** Creates a transaction (and its counterpart for buys, sells, transfers). */
         post: operations["create_transaction"];
         delete?: never;
         options?: never;
@@ -415,8 +434,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
+        /** Returns the booking of an existing transaction for editing. */
+        get: operations["get_transaction"];
+        /** Replaces a transaction (and its counterpart), keeping the ids. */
+        put: operations["update_transaction"];
         post?: never;
         delete: operations["delete_transaction"];
         options?: never;
@@ -473,6 +494,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/feeds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_feed_settings"];
+        put: operations["put_feed_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -496,6 +533,7 @@ export interface components {
             currency?: string | null;
             name: string;
             note?: string | null;
+            retired?: boolean;
         };
         AllocationSlice: {
             color?: string | null;
@@ -521,6 +559,56 @@ export interface components {
             /** @description no user exists yet: the first user can be created via `/auth/setup` */
             setup_required: boolean;
         };
+        /**
+         * @description User input for a transaction. Amounts use the usual factors (money 100,
+         *     shares 1e8).
+         */
+        Booking: {
+            /** @description account (cash side, source for cash transfers) */
+            account_id?: string | null;
+            /**
+             * Format: int64
+             * @description total amount in the currency of the transaction: for buys including
+             *     fees and taxes, for sells / dividends after fees and taxes
+             */
+            amount: number;
+            /** Format: date-time */
+            date_time: string;
+            /**
+             * @description exchange rate from the security (or target) currency into the
+             *     transaction currency (e.g. USD→EUR 0.92); required if currencies differ
+             */
+            exchange_rate?: string | null;
+            /** Format: int64 */
+            fees?: number;
+            kind: components["schemas"]["BookingKind"];
+            note?: string | null;
+            /** @description portfolio (securities side, source for security transfers) */
+            portfolio_id?: string | null;
+            security_id?: string | null;
+            /** Format: int64 */
+            shares?: number;
+            source?: string | null;
+            /** @description target of a cash transfer */
+            target_account_id?: string | null;
+            /**
+             * Format: int64
+             * @description amount credited on the target account of a cash transfer in a
+             *     different currency
+             */
+            target_amount?: number | null;
+            /** @description target of a security transfer */
+            target_portfolio_id?: string | null;
+            /** Format: int64 */
+            taxes?: number;
+        };
+        BookingDto: {
+            booking: components["schemas"]["Booking"];
+            /** @description id of the primary transaction of the pair */
+            id: string;
+        };
+        /** @enum {string} */
+        BookingKind: "BUY" | "SELL" | "DELIVERY_INBOUND" | "DELIVERY_OUTBOUND" | "SECURITY_TRANSFER" | "CASH_TRANSFER" | "DEPOSIT" | "REMOVAL" | "DIVIDENDS" | "INTEREST" | "INTEREST_CHARGE" | "FEES" | "FEES_REFUND" | "TAXES" | "TAX_REFUND";
         CashRow: {
             account_id: string;
             /** Format: int64 */
@@ -648,6 +736,29 @@ export interface components {
             last_update?: string | null;
             /** Format: int64 */
             rates: number;
+        };
+        FeedConfigDto: {
+            /** @description JSON path to the close values */
+            close_path?: string | null;
+            /** @description JSON path to the dates, e.g. `$.data[*].date` */
+            date_path?: string | null;
+            /**
+             * Format: double
+             * @description divide values by this factor (e.g. 100 for pence)
+             */
+            factor?: number | null;
+        };
+        FeedSettings: {
+            /** @description write only; on read only whether a key is set */
+            alphavantage_api_key?: string | null;
+            alphavantage_api_key_set?: boolean;
+        };
+        FeedStatusDto: {
+            last_run: string;
+            message?: string | null;
+            /** Format: int64 */
+            new_prices: number;
+            ok: boolean;
         };
         HoldingRow: {
             currency: string;
@@ -824,6 +935,7 @@ export interface components {
             name: string;
             note?: string | null;
             reference_account?: string | null;
+            retired?: boolean;
         };
         PriceInput: {
             /** Format: date */
@@ -840,9 +952,22 @@ export interface components {
             /** Format: int64 */
             value: number;
         };
+        QuoteUpdateRequest: {
+            /** @description only this security (default: all active securities with a feed) */
+            security_id?: string | null;
+        };
+        QuoteUpdateResult: {
+            feed: string;
+            message?: string | null;
+            name: string;
+            new_prices: number;
+            ok: boolean;
+            security_id: string;
+        };
         SecurityDetail: {
             calendar?: string | null;
             events: components["schemas"]["EventDto"][];
+            feed_config: components["schemas"]["FeedConfigDto"];
             feed_url?: string | null;
             performance?: null | components["schemas"]["SecurityPerformanceDto"];
             security: components["schemas"]["SecurityDto"];
@@ -852,6 +977,7 @@ export interface components {
         SecurityDto: {
             currency?: string | null;
             feed?: string | null;
+            feed_status?: null | components["schemas"]["FeedStatusDto"];
             /** Format: date */
             first_price_date?: string | null;
             id: string;
@@ -880,11 +1006,20 @@ export interface components {
             wkn?: string | null;
         };
         SecurityInput: {
+            calendar?: string | null;
             currency?: string | null;
+            /** @description quote feed for historical prices (e.g. YAHOO, GENERIC_JSON, GENERIC_HTML_TABLE, MANUAL) */
+            feed?: string | null;
+            feed_config?: null | components["schemas"]["FeedConfigDto"];
+            feed_url?: string | null;
             isin?: string | null;
+            /** @description feed for the latest quote (defaults to the historical feed) */
+            latest_feed?: string | null;
+            latest_feed_url?: string | null;
             name: string;
             note?: string | null;
             retired?: boolean;
+            target_currency?: string | null;
             ticker?: string | null;
             wkn?: string | null;
         };
@@ -983,35 +1118,6 @@ export interface components {
             nodes: components["schemas"]["TaxonomyNode"][];
             /** Format: int64 */
             total: number;
-        };
-        TransactionInput: {
-            account_id: string;
-            /**
-             * Format: int64
-             * @description total amount (factor 100); for buys including fees and taxes
-             */
-            amount: number;
-            /** Format: date-time */
-            date_time: string;
-            /** Format: int64 */
-            fees?: number;
-            /**
-             * @description DEPOSIT, REMOVAL, INTEREST, INTEREST_CHARGE, DIVIDENDS, FEES, FEES_REFUND, TAXES, TAX_REFUND, BUY, SELL
-             * @example BUY
-             */
-            kind: string;
-            note?: string | null;
-            /** @description required for BUY / SELL */
-            portfolio_id?: string | null;
-            /** @description required for BUY / SELL / DIVIDENDS */
-            security_id?: string | null;
-            /**
-             * Format: int64
-             * @description shares (factor 10^8)
-             */
-            shares?: number;
-            /** Format: int64 */
-            taxes?: number;
         };
         TransactionPage: {
             items: components["schemas"]["TransactionRow"][];
@@ -1433,6 +1539,36 @@ export interface operations {
             };
         };
     };
+    update_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                aid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountInput"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     delete_account: {
         parameters: {
             query?: never;
@@ -1505,6 +1641,30 @@ export interface operations {
             };
         };
     };
+    update_portfolio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioInput"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     delete_portfolio: {
         parameters: {
             query?: never;
@@ -1528,6 +1688,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    update_quotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteUpdateResult"][];
+                };
             };
         };
     };
@@ -1725,6 +1910,30 @@ export interface operations {
             };
         };
     };
+    update_security: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityInput"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     delete_security: {
         parameters: {
             query?: never;
@@ -1867,11 +2076,65 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TransactionInput"];
+                "application/json": components["schemas"]["Booking"];
             };
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_transaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                tid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDto"];
+                };
+            };
+        };
+    };
+    update_transaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                tid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Booking"];
+            };
+        };
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1965,6 +2228,52 @@ export interface operations {
                 };
             };
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_feed_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedSettings"];
+                };
+            };
+        };
+    };
+    put_feed_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedSettings"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -6,7 +6,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{NaiveDate, NaiveDateTime};
-use pp_core::Money;
+use pp_core::booking::Booking;
 use pp_core::model::*;
 use pp_core::security::SecurityPerformance;
 use pp_core::snapshot::ClientSnapshot;
@@ -42,6 +42,26 @@ pub struct SecurityDto {
     /// shares held today across all portfolios
     pub shares: i64,
     pub market_value: i64,
+    /// result of the last automatic quote update
+    pub feed_status: Option<FeedStatusDto>,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+pub struct FeedStatusDto {
+    pub last_run: String,
+    pub ok: bool,
+    pub message: Option<String>,
+    pub new_prices: i64,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Clone, Default)]
+pub struct FeedConfigDto {
+    /// JSON path to the dates, e.g. `$.data[*].date`
+    pub date_path: Option<String>,
+    /// JSON path to the close values
+    pub close_path: Option<String>,
+    /// divide values by this factor (e.g. 100 for pence)
+    pub factor: Option<f64>,
 }
 
 fn latest_change(s: &Security, date: NaiveDate) -> Option<f64> {
@@ -53,7 +73,11 @@ fn latest_change(s: &Security, date: NaiveDate) -> Option<f64> {
     Some(p.value as f64 / prev.value as f64 - 1.0)
 }
 
-fn security_dto(s: &Security, snap: &ClientSnapshot) -> SecurityDto {
+fn security_dto(
+    s: &Security,
+    snap: &ClientSnapshot,
+    status: Option<&pp_db::FeedStatus>,
+) -> SecurityDto {
     let today = snap.date;
     let price = s.price_at(today);
     let pos = snap
@@ -77,6 +101,12 @@ fn security_dto(s: &Security, snap: &ClientSnapshot) -> SecurityDto {
         latest_change: latest_change(s, today),
         shares: pos.map(|p| p.shares).unwrap_or(0),
         market_value: pos.map(|p| p.value_converted).unwrap_or(0),
+        feed_status: status.map(|f| FeedStatusDto {
+            last_run: f.last_run.clone(),
+            ok: f.ok,
+            message: f.message.clone(),
+            new_prices: f.new_prices,
+        }),
     }
 }
 
@@ -88,11 +118,12 @@ async fn list_securities(
 ) -> ApiResult<Json<Vec<SecurityDto>>> {
     let c = state.client(&user, &id).await?;
     let snap = ClientSnapshot::create(&c.client, &c.converter(), today());
+    let status = state.db.feed_status(&id).await?;
     Ok(Json(
         c.client
             .securities
             .iter()
-            .map(|s| security_dto(s, &snap))
+            .map(|s| security_dto(s, &snap, status.get(&s.id)))
             .collect(),
     ))
 }
@@ -106,6 +137,7 @@ pub struct PricePoint {
 #[derive(Serialize, ToSchema)]
 pub struct SecurityDetail {
     pub security: SecurityDto,
+    pub feed_config: FeedConfigDto,
     pub calendar: Option<String>,
     pub feed_url: Option<String>,
     pub target_currency: Option<String>,
@@ -176,8 +208,15 @@ async fn get_security(
             ..Default::default()
         },
     );
+    let status = state.db.feed_status(&id).await?;
+    let cfg = crate::quotes::feed_config(s);
     Ok(Json(SecurityDetail {
-        security: security_dto(s, &snap),
+        security: security_dto(s, &snap, status.get(&sid)),
+        feed_config: FeedConfigDto {
+            date_path: cfg.date_path,
+            close_path: cfg.close_path,
+            factor: cfg.factor,
+        },
         calendar: s.calendar.clone(),
         feed_url: s.feed_url.clone(),
         target_currency: s.target_currency.clone(),
@@ -235,6 +274,66 @@ pub struct SecurityInput {
     pub note: Option<String>,
     #[serde(default)]
     pub retired: bool,
+    /// quote feed for historical prices (e.g. YAHOO, GENERIC_JSON, GENERIC_HTML_TABLE, MANUAL)
+    pub feed: Option<String>,
+    pub feed_url: Option<String>,
+    /// feed for the latest quote (defaults to the historical feed)
+    pub latest_feed: Option<String>,
+    pub latest_feed_url: Option<String>,
+    pub calendar: Option<String>,
+    pub target_currency: Option<String>,
+    /// settings for GENERIC-JSON feeds
+    pub feed_config: Option<FeedConfigDto>,
+}
+
+fn opt(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+impl SecurityInput {
+    fn apply(self, s: &mut Security) {
+        s.name = self.name.trim().to_string();
+        s.currency = opt(self.currency)
+            .map(|c| c.to_uppercase())
+            .or(s.currency.take());
+        s.isin = opt(self.isin).map(|c| c.to_uppercase());
+        s.wkn = opt(self.wkn);
+        s.ticker = opt(self.ticker);
+        s.note = opt(self.note);
+        s.retired = self.retired;
+        s.feed = opt(self.feed);
+        s.feed_url = opt(self.feed_url);
+        s.latest_feed = opt(self.latest_feed);
+        s.latest_feed_url = opt(self.latest_feed_url);
+        s.calendar = opt(self.calendar);
+        s.target_currency = opt(self.target_currency);
+        if let Some(cfg) = self.feed_config {
+            if !s.attributes.is_object() {
+                s.attributes = serde_json::json!({});
+            }
+            s.attributes[crate::quotes::FEED_CONFIG_KEY] =
+                serde_json::to_value(cfg).unwrap_or_default();
+        }
+        s.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    }
+}
+
+/// Updates the master data of a security (prices and events are kept).
+#[utoipa::path(put, path = "/clients/{id}/securities/{sid}", tag = "data", params(("id" = String, Path), ("sid" = String, Path)), request_body = SecurityInput, responses((status = 204)))]
+async fn update_security(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, sid)): Path<(String, String)>,
+    Json(input): Json<SecurityInput>,
+) -> ApiResult<StatusCode> {
+    let c = state.client(&user, &id).await?;
+    let mut s = c.client.security(&sid).ok_or(ApiError::NotFound)?.clone();
+    if input.name.trim().is_empty() {
+        return Err(ApiError::BadRequest("Name fehlt".into()));
+    }
+    input.apply(&mut s);
+    state.db.save_security(&id, &s).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(post, path = "/clients/{id}/securities", tag = "data", params(("id" = String, Path)), request_body = SecurityInput, responses((status = 201, body = String)))]
@@ -246,20 +345,15 @@ async fn create_security(
 ) -> ApiResult<(StatusCode, Json<String>)> {
     let c = state.client(&user, &id).await?;
     let sid = uuid::Uuid::new_v4().to_string();
-    let s = Security {
+    let mut s = Security {
         id: sid.clone(),
-        name: input.name,
-        currency: input
-            .currency
-            .or_else(|| Some(c.client.base_currency.clone())),
-        isin: input.isin,
-        wkn: input.wkn,
-        ticker: input.ticker,
-        note: input.note,
-        retired: input.retired,
-        updated_at: Some(chrono::Utc::now().to_rfc3339()),
+        currency: Some(c.client.base_currency.clone()),
         ..Default::default()
     };
+    if input.name.trim().is_empty() {
+        return Err(ApiError::BadRequest("Name fehlt".into()));
+    }
+    input.apply(&mut s);
     state.db.save_security(&id, &s).await?;
     Ok((StatusCode::CREATED, Json(sid)))
 }
@@ -396,6 +490,36 @@ pub struct AccountInput {
     pub name: String,
     pub currency: Option<String>,
     pub note: Option<String>,
+    #[serde(default)]
+    pub retired: bool,
+}
+
+#[utoipa::path(put, path = "/clients/{id}/accounts/{aid}", tag = "data", params(("id" = String, Path), ("aid" = String, Path)), request_body = AccountInput, responses((status = 204), (status = 409)))]
+async fn update_account(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, aid)): Path<(String, String)>,
+    Json(input): Json<AccountInput>,
+) -> ApiResult<StatusCode> {
+    let c = state.client(&user, &id).await?;
+    let mut a = c.client.account(&aid).ok_or(ApiError::NotFound)?.clone();
+    if let Some(cur) = opt(input.currency).map(|c| c.to_uppercase())
+        && cur != a.currency
+    {
+        if !a.transactions.is_empty() {
+            return Err(ApiError::Conflict(
+                "Die Währung kann nur ohne Buchungen geändert werden".into(),
+            ));
+        }
+        a.currency = cur;
+    }
+    a.name = input.name.trim().to_string();
+    a.note = opt(input.note);
+    a.retired = input.retired;
+    a.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    a.transactions.clear();
+    state.db.save_account(&id, &a).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(post, path = "/clients/{id}/accounts", tag = "data", params(("id" = String, Path)), request_body = AccountInput, responses((status = 201, body = String)))]
@@ -426,6 +550,32 @@ pub struct PortfolioInput {
     pub name: String,
     pub reference_account: Option<String>,
     pub note: Option<String>,
+    #[serde(default)]
+    pub retired: bool,
+}
+
+#[utoipa::path(put, path = "/clients/{id}/portfolios/{pid}", tag = "data", params(("id" = String, Path), ("pid" = String, Path)), request_body = PortfolioInput, responses((status = 204)))]
+async fn update_portfolio(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, pid)): Path<(String, String)>,
+    Json(input): Json<PortfolioInput>,
+) -> ApiResult<StatusCode> {
+    let c = state.client(&user, &id).await?;
+    let mut p = c.client.portfolio(&pid).ok_or(ApiError::NotFound)?.clone();
+    if let Some(r) = &input.reference_account {
+        c.client
+            .account(r)
+            .ok_or_else(|| ApiError::BadRequest("Referenzkonto unbekannt".into()))?;
+    }
+    p.name = input.name.trim().to_string();
+    p.note = opt(input.note);
+    p.retired = input.retired;
+    p.reference_account = input.reference_account;
+    p.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    p.transactions.clear();
+    state.db.save_portfolio(&id, &p).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(post, path = "/clients/{id}/portfolios", tag = "data", params(("id" = String, Path)), request_body = PortfolioInput, responses((status = 201, body = String)))]
@@ -675,177 +825,74 @@ async fn list_transactions(
     }))
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct TransactionInput {
-    /// DEPOSIT, REMOVAL, INTEREST, INTEREST_CHARGE, DIVIDENDS, FEES, FEES_REFUND, TAXES, TAX_REFUND, BUY, SELL
-    #[schema(example = "BUY")]
-    pub kind: String,
-    pub account_id: String,
-    /// required for BUY / SELL
-    pub portfolio_id: Option<String>,
-    /// required for BUY / SELL / DIVIDENDS
-    pub security_id: Option<String>,
-    pub date_time: NaiveDateTime,
-    /// total amount (factor 100); for buys including fees and taxes
-    pub amount: i64,
-    /// shares (factor 10^8)
-    #[serde(default)]
-    pub shares: i64,
-    #[serde(default)]
-    pub fees: i64,
-    #[serde(default)]
-    pub taxes: i64,
-    pub note: Option<String>,
+fn store_booking_error(e: String) -> ApiError {
+    ApiError::BadRequest(e)
 }
 
-#[utoipa::path(post, path = "/clients/{id}/transactions", tag = "data", params(("id" = String, Path)), request_body = TransactionInput, responses((status = 201, body = String), (status = 400)))]
+/// Creates a transaction (and its counterpart for buys, sells, transfers).
+#[utoipa::path(post, path = "/clients/{id}/transactions", tag = "data", params(("id" = String, Path)), request_body = Booking, responses((status = 201, body = String), (status = 400)))]
 async fn create_transaction(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<String>,
-    Json(input): Json<TransactionInput>,
+    Json(booking): Json<Booking>,
 ) -> ApiResult<(StatusCode, Json<String>)> {
     let c = state.client(&user, &id).await?;
-    let account = c
-        .client
-        .account(&input.account_id)
-        .ok_or_else(|| ApiError::BadRequest("Konto unbekannt".into()))?;
-    if input.amount <= 0 {
-        return Err(ApiError::BadRequest("Betrag muss positiv sein".into()));
-    }
-    let currency = account.currency.clone();
-    let mut units = Vec::new();
-    if input.fees != 0 {
-        units.push(TransactionUnit {
-            kind: UnitType::Fee,
-            amount: Money::new(&currency, input.fees),
-            forex: None,
-            exchange_rate: None,
-        });
-    }
-    if input.taxes != 0 {
-        units.push(TransactionUnit {
-            kind: UnitType::Tax,
-            amount: Money::new(&currency, input.taxes),
-            forex: None,
-            exchange_rate: None,
-        });
-    }
-    if let Some(sid) = &input.security_id {
-        c.client
-            .security(sid)
-            .ok_or_else(|| ApiError::BadRequest("Wertpapier unbekannt".into()))?;
-    }
-    let tx_id = uuid::Uuid::new_v4().to_string();
-    let now = Some(chrono::Utc::now().to_rfc3339());
-    let common =
-        |tid: &str, units: Vec<TransactionUnit>, cross: Option<CrossEntry>| TransactionCommon {
-            id: tid.into(),
-            date_time: input.date_time,
-            currency: currency.clone(),
-            amount: input.amount,
-            shares: input.shares,
-            security: input.security_id.clone(),
-            note: input.note.clone(),
-            source: None,
-            units,
-            cross_entry: cross,
-            updated_at: now.clone(),
-        };
+    let txs = booking
+        .build(&c.client, None, Some(chrono::Utc::now().to_rfc3339()))
+        .map_err(store_booking_error)?;
+    let primary = txs[0].id().to_string();
+    state.db.replace_transactions(&id, &[], &txs).await?;
+    Ok((StatusCode::CREATED, Json(primary)))
+}
 
-    match input.kind.as_str() {
-        "BUY" | "SELL" => {
-            let pid = input
-                .portfolio_id
-                .as_deref()
-                .ok_or_else(|| ApiError::BadRequest("Depot fehlt".into()))?;
-            c.client
-                .portfolio(pid)
-                .ok_or_else(|| ApiError::BadRequest("Depot unbekannt".into()))?;
-            if input.security_id.is_none() || input.shares <= 0 {
-                return Err(ApiError::BadRequest(
-                    "Wertpapier und Stückzahl erforderlich".into(),
-                ));
-            }
-            let sec = c
-                .client
-                .security(input.security_id.as_deref().unwrap())
-                .unwrap();
-            if sec.currency.as_deref().is_some_and(|sc| sc != currency) {
-                return Err(ApiError::BadRequest(
-                    "Fremdwährungsbuchungen werden noch nicht unterstützt".into(),
-                ));
-            }
-            let buy = input.kind == "BUY";
-            if buy && input.fees + input.taxes >= input.amount {
-                return Err(ApiError::BadRequest(
-                    "Gebühren und Steuern übersteigen den Betrag".into(),
-                ));
-            }
-            let atx_id = uuid::Uuid::new_v4().to_string();
-            let ptx = PortfolioTransaction {
-                kind: if buy {
-                    PortfolioTransactionType::Buy
-                } else {
-                    PortfolioTransactionType::Sell
-                },
-                common: common(
-                    &tx_id,
-                    units,
-                    Some(CrossEntry {
-                        kind: CrossEntryKind::BuySell,
-                        other_owner: account.id.clone(),
-                        other_transaction: atx_id.clone(),
-                    }),
-                ),
-            };
-            let mut ac = common(
-                &atx_id,
-                vec![],
-                Some(CrossEntry {
-                    kind: CrossEntryKind::BuySell,
-                    other_owner: pid.to_string(),
-                    other_transaction: tx_id.clone(),
-                }),
-            );
-            ac.shares = 0;
-            let atx = AccountTransaction {
-                kind: if buy {
-                    AccountTransactionType::Buy
-                } else {
-                    AccountTransactionType::Sell
-                },
-                common: ac,
-                ex_date: None,
-            };
-            state
-                .db
-                .insert_buy_sell(&id, pid, &ptx, &account.id, &atx)
-                .await?;
-        }
-        k => {
-            let kind = AccountTransactionType::parse(k)
-                .ok_or_else(|| ApiError::BadRequest(format!("Buchungstyp {k} unbekannt")))?;
-            use AccountTransactionType as A;
-            if matches!(kind, A::Buy | A::Sell | A::TransferIn | A::TransferOut) {
-                return Err(ApiError::BadRequest(
-                    "Umbuchungen werden noch nicht unterstützt".into(),
-                ));
-            }
-            if kind == A::Dividends && input.security_id.is_none() {
-                return Err(ApiError::BadRequest(
-                    "Dividende benötigt ein Wertpapier".into(),
-                ));
-            }
-            let atx = AccountTransaction {
-                kind,
-                common: common(&tx_id, units, None),
-                ex_date: None,
-            };
-            state.db.insert_account_tx(&id, &account.id, &atx).await?;
-        }
-    }
-    Ok((StatusCode::CREATED, Json(tx_id)))
+#[derive(Serialize, ToSchema)]
+pub struct BookingDto {
+    /// id of the primary transaction of the pair
+    pub id: String,
+    pub booking: Booking,
+}
+
+/// Returns the booking of an existing transaction for editing.
+#[utoipa::path(get, path = "/clients/{id}/transactions/{tid}", tag = "data", params(("id" = String, Path), ("tid" = String, Path)), responses((status = 200, body = BookingDto)))]
+async fn get_transaction(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, tid)): Path<(String, String)>,
+) -> ApiResult<Json<BookingDto>> {
+    let c = state.client(&user, &id).await?;
+    let (booking, primary) =
+        pp_core::booking::reconstruct(&c.client, &tid).ok_or(ApiError::NotFound)?;
+    Ok(Json(BookingDto {
+        id: primary,
+        booking,
+    }))
+}
+
+/// Replaces a transaction (and its counterpart), keeping the ids.
+#[utoipa::path(put, path = "/clients/{id}/transactions/{tid}", tag = "data", params(("id" = String, Path), ("tid" = String, Path)), request_body = Booking, responses((status = 200, body = String), (status = 400)))]
+async fn update_transaction(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, tid)): Path<(String, String)>,
+    Json(booking): Json<Booking>,
+) -> ApiResult<Json<String>> {
+    let c = state.client(&user, &id).await?;
+    let (_, primary) = pp_core::booking::reconstruct(&c.client, &tid).ok_or(ApiError::NotFound)?;
+    // build against a client without the old transactions (not needed for
+    // validation, ids are kept)
+    let txs = booking
+        .build(
+            &c.client,
+            Some(primary.clone()),
+            Some(chrono::Utc::now().to_rfc3339()),
+        )
+        .map_err(store_booking_error)?;
+    state
+        .db
+        .replace_transactions(&id, std::slice::from_ref(&primary), &txs)
+        .await?;
+    Ok(Json(primary))
 }
 
 #[utoipa::path(delete, path = "/clients/{id}/transactions/{tid}", tag = "data", params(("id" = String, Path), ("tid" = String, Path)), responses((status = 204)))]
@@ -886,16 +933,81 @@ async fn list_watchlists(
     ))
 }
 
+#[derive(Deserialize, ToSchema, Default)]
+pub struct QuoteUpdateRequest {
+    /// only this security (default: all active securities with a feed)
+    pub security_id: Option<String>,
+}
+
+/// Fetches new prices from the configured quote feeds.
+#[utoipa::path(post, path = "/clients/{id}/quotes/update", tag = "data", params(("id" = String, Path)), request_body = QuoteUpdateRequest, responses((status = 200, body = Vec<crate::quotes::QuoteUpdateResult>)))]
+async fn update_quotes(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<String>,
+    Json(req): Json<QuoteUpdateRequest>,
+) -> ApiResult<Json<Vec<crate::quotes::QuoteUpdateResult>>> {
+    state.client(&user, &id).await?;
+    Ok(Json(
+        crate::quotes::update_client(&state, &id, req.security_id.as_deref()).await?,
+    ))
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct FeedSettings {
+    /// write only; on read only whether a key is set
+    pub alphavantage_api_key: Option<String>,
+    #[serde(default)]
+    pub alphavantage_api_key_set: bool,
+}
+
+#[utoipa::path(get, path = "/settings/feeds", tag = "system", responses((status = 200, body = FeedSettings)))]
+async fn get_feed_settings(
+    State(state): State<SharedState>,
+    _user: CurrentUser,
+) -> ApiResult<Json<FeedSettings>> {
+    let key = state.db.setting("alphavantage_api_key").await?;
+    Ok(Json(FeedSettings {
+        alphavantage_api_key: None,
+        alphavantage_api_key_set: key.is_some_and(|k| !k.is_empty()),
+    }))
+}
+
+#[utoipa::path(put, path = "/settings/feeds", tag = "system", request_body = FeedSettings, responses((status = 204), (status = 403)))]
+async fn put_feed_settings(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Json(s): Json<FeedSettings>,
+) -> ApiResult<StatusCode> {
+    if !user.is_admin {
+        return Err(ApiError::Forbidden);
+    }
+    state
+        .db
+        .set_setting(
+            "alphavantage_api_key",
+            s.alphavantage_api_key.as_deref().unwrap_or_default().trim(),
+        )
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn router() -> OpenApiRouter<SharedState> {
     OpenApiRouter::new()
         .routes(routes!(list_securities, create_security))
-        .routes(routes!(get_security, delete_security))
+        .routes(routes!(get_security, update_security, delete_security))
         .routes(routes!(get_prices, put_prices))
         .routes(routes!(list_accounts, create_account))
-        .routes(routes!(delete_account))
+        .routes(routes!(update_account, delete_account))
         .routes(routes!(list_portfolios, create_portfolio))
-        .routes(routes!(delete_portfolio))
+        .routes(routes!(update_portfolio, delete_portfolio))
         .routes(routes!(list_transactions, create_transaction))
-        .routes(routes!(delete_transaction))
+        .routes(routes!(
+            get_transaction,
+            update_transaction,
+            delete_transaction
+        ))
         .routes(routes!(list_watchlists))
+        .routes(routes!(update_quotes))
+        .routes(routes!(get_feed_settings, put_feed_settings))
 }

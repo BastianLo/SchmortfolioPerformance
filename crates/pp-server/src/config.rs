@@ -29,6 +29,7 @@ pub struct Config {
     pub admin_password: Option<String>,
     pub disable_local_login: bool,
     pub ecb_update: bool,
+    pub quote_update: bool,
     pub max_upload_mb: usize,
     pub oidc: Option<OidcConfig>,
 }
@@ -99,6 +100,7 @@ impl Config {
             admin_password: var("PP_ADMIN_PASSWORD"),
             disable_local_login: flag("PP_DISABLE_LOCAL_LOGIN", false),
             ecb_update: flag("PP_ECB_UPDATE", true),
+            quote_update: flag("PP_QUOTE_UPDATE", true),
             max_upload_mb: var("PP_MAX_UPLOAD_MB")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),

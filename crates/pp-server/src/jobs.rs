@@ -14,6 +14,11 @@ pub fn spawn(state: SharedState) {
             {
                 tracing::warn!("ECB exchange rate update failed: {e:#}");
             }
+            if state.config.quote_update
+                && let Err(e) = crate::quotes::update_all(&state).await
+            {
+                tracing::warn!("quote update failed: {e:#}");
+            }
             if let Ok(n) = state.db.purge_sessions().await
                 && n > 0
             {
