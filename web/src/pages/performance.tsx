@@ -4,6 +4,7 @@ import { BarsChart, ValueChart } from "@/components/charts/presets";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ErrorBox, PageHeader, Segmented, Skeleton, Stat, Warnings } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
+import { useFilter } from "@/lib/filter-context";
 import { date, money, percent, tone } from "@/lib/format";
 import { usePeriod } from "@/lib/period-context";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ export function PerformancePage() {
   const clientId = useClientId();
   const { range } = usePeriod();
   const [mode, setMode] = React.useState<"return" | "value" | "drawdown">("return");
-  const { data, error, isLoading } = usePerformance(clientId, range);
+  const { data, error, isLoading } = usePerformance(clientId, range, undefined, useFilter().filter);
 
   const years = React.useMemo(() => {
     if (!data) return [];

@@ -4,6 +4,7 @@ import { BarsChart, Donut } from "@/components/charts/presets";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ErrorBox, PageHeader, Segmented, Skeleton, Stat } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
+import { useFilter } from "@/lib/filter-context";
 import { date, money, percent, TX_LABELS } from "@/lib/format";
 import { usePeriod } from "@/lib/period-context";
 import { PeriodPicker } from "./dashboard";
@@ -13,7 +14,7 @@ const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", 
 export function EarningsPage() {
   const clientId = useClientId();
   const { range } = usePeriod();
-  const { data, error, isLoading } = useEarnings(clientId, range);
+  const { data, error, isLoading } = useEarnings(clientId, range, useFilter().filter);
   const [view, setView] = React.useState<"month" | "year">("month");
 
   const chart = React.useMemo(() => {

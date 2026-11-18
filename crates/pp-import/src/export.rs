@@ -218,9 +218,17 @@ impl<'a> Writer<'a> {
         for u in units {
             self.line(&format!("<unit type=\"{}\">", u.kind.as_str()));
             self.depth += 1;
-            self.line(&format!("<amount currency=\"{}\" amount=\"{}\"/>", esc(&u.amount.currency), u.amount.amount));
+            self.line(&format!(
+                "<amount currency=\"{}\" amount=\"{}\"/>",
+                esc(&u.amount.currency),
+                u.amount.amount
+            ));
             if let Some(f) = &u.forex {
-                self.line(&format!("<forex currency=\"{}\" amount=\"{}\"/>", esc(&f.currency), f.amount));
+                self.line(&format!(
+                    "<forex currency=\"{}\" amount=\"{}\"/>",
+                    esc(&f.currency),
+                    f.amount
+                ));
             }
             if let Some(r) = &u.exchange_rate {
                 self.el("exchangeRate", &r.to_string());
@@ -245,7 +253,9 @@ impl<'a> Writer<'a> {
     /// Writes the cross entry of transaction `t` (owned by `owner`).
     fn cross_entry(&mut self, t: &'a TransactionCommon, is_account: bool, kind: &str) {
         let Some(ce) = &t.cross_entry else { return };
-        let Some(key) = Self::cross_key(t) else { return };
+        let Some(key) = Self::cross_key(t) else {
+            return;
+        };
         let class = match ce.kind {
             CrossEntryKind::BuySell => "buysell",
             CrossEntryKind::AccountTransfer => "account-transfer",
@@ -257,7 +267,11 @@ impl<'a> Writer<'a> {
         let (this_id, other_id) = (t.id.as_str(), ce.other_transaction.as_str());
         match ce.kind {
             CrossEntryKind::BuySell => {
-                let (ptx, atx) = if is_account { (other_id, this_id) } else { (this_id, other_id) };
+                let (ptx, atx) = if is_account {
+                    (other_id, this_id)
+                } else {
+                    (this_id, other_id)
+                };
                 if let Some((p, _)) = self.pf_tx.get(ptx).copied() {
                     self.portfolio("portfolio", p);
                 }
@@ -268,7 +282,11 @@ impl<'a> Writer<'a> {
                 self.tx_ref("accountTransaction", atx);
             }
             CrossEntryKind::AccountTransfer => {
-                let (from, to) = if kind == "TRANSFER_OUT" { (this_id, other_id) } else { (other_id, this_id) };
+                let (from, to) = if kind == "TRANSFER_OUT" {
+                    (this_id, other_id)
+                } else {
+                    (other_id, this_id)
+                };
                 if let Some((a, _)) = self.acc_tx.get(from).copied() {
                     self.account("accountFrom", a);
                 }
@@ -279,7 +297,11 @@ impl<'a> Writer<'a> {
                 self.tx_ref("transactionTo", to);
             }
             CrossEntryKind::PortfolioTransfer => {
-                let (from, to) = if kind == "TRANSFER_OUT" { (this_id, other_id) } else { (other_id, this_id) };
+                let (from, to) = if kind == "TRANSFER_OUT" {
+                    (this_id, other_id)
+                } else {
+                    (other_id, this_id)
+                };
                 if let Some((p, _)) = self.pf_tx.get(from).copied() {
                     self.portfolio("portfolioFrom", p);
                 }
@@ -395,14 +417,23 @@ impl<'a> Writer<'a> {
         self.close(tag, Key::Portfolio(&p.id));
     }
 
-    fn classification(&mut self, t: &'a Taxonomy, c: &'a Classification, tag: &str, children: &HashMap<Option<&'a str>, Vec<&'a Classification>>) {
+    fn classification(
+        &mut self,
+        t: &'a Taxonomy,
+        c: &'a Classification,
+        tag: &str,
+        children: &HashMap<Option<&'a str>, Vec<&'a Classification>>,
+    ) {
         self.line(&format!("<{tag}>"));
         self.depth += 1;
         self.el("id", &c.id);
         self.el("name", &c.name);
         self.opt("note", &c.note);
         self.opt("color", &c.color);
-        let kids = children.get(&Some(c.id.as_str())).cloned().unwrap_or_default();
+        let kids = children
+            .get(&Some(c.id.as_str()))
+            .cloned()
+            .unwrap_or_default();
         if kids.is_empty() {
             self.line("<children/>");
         } else {
@@ -425,10 +456,14 @@ impl<'a> Writer<'a> {
                 } else {
                     ("account", Key::Account(a.vehicle.as_str()))
                 };
-                let Some(id) = self.ids.get(&key).copied() else { continue };
+                let Some(id) = self.ids.get(&key).copied() else {
+                    continue;
+                };
                 self.line("<assignment>");
                 self.depth += 1;
-                self.line(&format!("<investmentVehicle class=\"{class}\" reference=\"{id}\"/>"));
+                self.line(&format!(
+                    "<investmentVehicle class=\"{class}\" reference=\"{id}\"/>"
+                ));
                 self.el("weight", &a.weight.to_string());
                 self.el("rank", &a.rank.to_string());
                 self.depth -= 1;
@@ -512,14 +547,66 @@ pub fn to_pp_xml(c: &Client) -> String {
     }
     w.depth -= 1;
     w.line("</portfolios>");
-    w.line("<plans/>");
+    if c.plans.is_empty() {
+        w.line("<plans/>");
+    } else {
+        w.line("<plans>");
+        w.depth += 1;
+        for p in &c.plans {
+            w.line("<investment-plan>");
+            w.depth += 1;
+            w.el("name", &p.name);
+            w.opt("note", &p.note);
+            for (tag, key) in [
+                ("security", p.security.as_deref().map(Key::Security)),
+                ("portfolio", p.portfolio.as_deref().map(Key::Portfolio)),
+                ("account", p.account.as_deref().map(Key::Account)),
+            ] {
+                if let Some(id) = key.and_then(|k| w.ids.get(&k).copied()) {
+                    w.line(&format!("<{tag} reference=\"{id}\"/>"));
+                }
+            }
+            w.line("<attributes>");
+            w.line("  <map/>");
+            w.line("</attributes>");
+            w.el("autoGenerate", &p.auto_generate.to_string());
+            w.el("start", &dt(&p.start));
+            w.el("interval", &p.interval.to_string());
+            w.el("amount", &p.amount.to_string());
+            w.el("fees", &p.fees.to_string());
+            w.line("<transactions>");
+            w.depth += 1;
+            for t in &p.transactions {
+                let Some(id) = w.ids.get(&Key::Tx(t.as_str())).copied() else {
+                    continue;
+                };
+                let tag = if w.acc_tx.contains_key(t.as_str()) {
+                    "account-transaction"
+                } else {
+                    "portfolio-transaction"
+                };
+                w.line(&format!("<{tag} reference=\"{id}\"/>"));
+            }
+            w.depth -= 1;
+            w.line("</transactions>");
+            w.el("taxes", &p.taxes.to_string());
+            w.el("type", p.kind.as_str());
+            w.depth -= 1;
+            w.line("</investment-plan>");
+        }
+        w.depth -= 1;
+        w.line("</plans>");
+    }
 
     w.line("<taxonomies>");
     w.depth += 1;
     for t in &c.taxonomies {
         let mut children: HashMap<Option<&str>, Vec<&Classification>> = HashMap::new();
         for cl in &t.classifications {
-            children.entry(cl.parent_id.as_deref()).or_default().push(cl);
+            children
+                .entry(cl.parent_id.as_deref())
+                .or_default()
+                .push(cl);
         }
         for v in children.values_mut() {
             v.sort_by_key(|c| c.rank);

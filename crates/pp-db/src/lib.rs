@@ -434,6 +434,17 @@ impl Db {
                 .await?;
             }
         }
+        for (pos, p) in c.plans.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO investment_plans (client_id, id, position, data) VALUES (?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(&p.id)
+            .bind(pos as i64)
+            .bind(serde_json::to_string(p)?)
+            .execute(&mut *tx)
+            .await?;
+        }
         for (pos, w) in c.watchlists.iter().enumerate() {
             sqlx::query("INSERT INTO watchlists (client_id, position, name, securities) VALUES (?, ?, ?, ?)")
                 .bind(&id)
@@ -661,6 +672,16 @@ impl Db {
                 })
                 .collect();
 
+        let plans = sqlx::query_scalar::<_, String>(
+            "SELECT data FROM investment_plans WHERE client_id = ? ORDER BY position",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .filter_map(|d| serde_json::from_str(&d).ok())
+        .collect();
+
         let mut client = Client {
             version: meta.pp_version as i32,
             base_currency: meta.base_currency,
@@ -669,6 +690,7 @@ impl Db {
             portfolios,
             taxonomies,
             watchlists,
+            plans,
             extra: serde_json::from_str(&extra).unwrap_or_default(),
         };
         client.normalize();
@@ -854,6 +876,140 @@ impl Db {
                 .await?;
         }
         tx.commit().await?;
+        self.bump_version(client_id).await
+    }
+
+    // ------------------------------------------------- watchlists/taxonomies
+
+    pub async fn set_watchlists(&self, client_id: &str, lists: &[Watchlist]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM watchlists WHERE client_id = ?")
+            .bind(client_id)
+            .execute(&mut *tx)
+            .await?;
+        for (pos, w) in lists.iter().enumerate() {
+            sqlx::query("INSERT INTO watchlists (client_id, position, name, securities) VALUES (?, ?, ?, ?)")
+                .bind(client_id)
+                .bind(pos as i64)
+                .bind(&w.name)
+                .bind(serde_json::to_string(&w.securities)?)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        self.bump_version(client_id).await
+    }
+
+    pub async fn update_classification(
+        &self,
+        client_id: &str,
+        taxonomy_id: &str,
+        c: &Classification,
+    ) -> Result<()> {
+        let r = sqlx::query(
+            "UPDATE classifications SET name = ?, color = ?, weight = ?, note = ?, assignments = ?
+             WHERE client_id = ? AND taxonomy_id = ? AND id = ?",
+        )
+        .bind(&c.name)
+        .bind(&c.color)
+        .bind(c.weight as i64)
+        .bind(&c.note)
+        .bind(serde_json::to_string(&c.assignments)?)
+        .bind(client_id)
+        .bind(taxonomy_id)
+        .bind(&c.id)
+        .execute(&self.pool)
+        .await?;
+        if r.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        self.bump_version(client_id).await
+    }
+
+    pub async fn insert_classification(
+        &self,
+        client_id: &str,
+        taxonomy_id: &str,
+        c: &Classification,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO classifications (client_id, taxonomy_id, id, position, parent_id, name, note, color, weight, rank, assignments, data)
+             VALUES (?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM classifications WHERE client_id = ?), ?, ?, ?, ?, ?, ?, ?, 'null')",
+        )
+        .bind(client_id)
+        .bind(taxonomy_id)
+        .bind(&c.id)
+        .bind(client_id)
+        .bind(&c.parent_id)
+        .bind(&c.name)
+        .bind(&c.note)
+        .bind(&c.color)
+        .bind(c.weight as i64)
+        .bind(c.rank as i64)
+        .bind(serde_json::to_string(&c.assignments)?)
+        .execute(&self.pool)
+        .await?;
+        self.bump_version(client_id).await
+    }
+
+    pub async fn delete_classification(
+        &self,
+        client_id: &str,
+        taxonomy_id: &str,
+        id: &str,
+    ) -> Result<()> {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM classifications WHERE client_id = ? AND taxonomy_id = ? AND parent_id = ?")
+            .bind(client_id)
+            .bind(taxonomy_id)
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+        if n > 0 {
+            return Err(DbError::Invalid(
+                "Die Klassifizierung hat noch Unterkategorien".into(),
+            ));
+        }
+        sqlx::query(
+            "DELETE FROM classifications WHERE client_id = ? AND taxonomy_id = ? AND id = ?",
+        )
+        .bind(client_id)
+        .bind(taxonomy_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.bump_version(client_id).await
+    }
+
+    // ---------------------------------------------------------------- plans
+
+    pub async fn save_plan(
+        &self,
+        client_id: &str,
+        p: &pp_core::plan::InvestmentPlan,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO investment_plans (client_id, id, position, data)
+             VALUES (?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM investment_plans WHERE client_id = ?), ?)
+             ON CONFLICT (client_id, id) DO UPDATE SET data = excluded.data",
+        )
+        .bind(client_id)
+        .bind(&p.id)
+        .bind(client_id)
+        .bind(serde_json::to_string(p)?)
+        .execute(&self.pool)
+        .await?;
+        self.bump_version(client_id).await
+    }
+
+    pub async fn delete_plan(&self, client_id: &str, plan_id: &str) -> Result<()> {
+        let r = sqlx::query("DELETE FROM investment_plans WHERE client_id = ? AND id = ?")
+            .bind(client_id)
+            .bind(plan_id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
         self.bump_version(client_id).await
     }
 

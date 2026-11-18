@@ -3,18 +3,25 @@ import { ArrowDownRight, ArrowUpRight, Coins } from "lucide-react";
 import * as React from "react";
 import { useClient, useDashboard, useTaxonomies } from "@/api/hooks";
 import { Donut, ValueChart } from "@/components/charts/presets";
+import { FilterPicker } from "@/components/filter-picker";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { ErrorBox, PageHeader, Segmented, Skeleton, Stat, Warnings } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
+import { useFilter } from "@/lib/filter-context";
 import { date, money, percent, TX_LABELS, tone } from "@/lib/format";
 import { PERIODS } from "@/lib/period";
 import { usePeriod } from "@/lib/period-context";
 import { cn } from "@/lib/utils";
 
-export function PeriodPicker() {
+export function PeriodPicker({ withPeriod = true }: { withPeriod?: boolean }) {
   const { period, setPeriod } = usePeriod();
-  return <Segmented value={period} onChange={setPeriod} options={PERIODS} />;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterPicker />
+      {withPeriod && <Segmented value={period} onChange={setPeriod} options={PERIODS} />}
+    </div>
+  );
 }
 
 function DashboardSkeleton() {
@@ -34,7 +41,7 @@ export function DashboardPage() {
   const [chartMode, setChartMode] = React.useState<"value" | "return" | "drawdown">("value");
   const { data: client } = useClient(clientId);
   const { data: taxonomies } = useTaxonomies(clientId);
-  const { data, error, isLoading, isFetching } = useDashboard(clientId, range, taxonomy);
+  const { data, error, isLoading, isFetching } = useDashboard(clientId, range, taxonomy, useFilter().filter);
   const periodLabel = PERIODS.find((p) => p.key === period)?.label;
 
   if (error) return <ErrorBox error={error} />;

@@ -291,10 +291,17 @@ async fn export_pp_xml(
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     let meta = state.db.client_meta(&id).await?;
-    let name: String = meta.name.chars().filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' ')).collect();
+    let name: String = meta
+        .name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' '))
+        .collect();
     Ok(axum::response::Response::builder()
         .header("content-type", "application/xml; charset=utf-8")
-        .header("content-disposition", format!("attachment; filename=\"{}.xml\"", name.trim()))
+        .header(
+            "content-disposition",
+            format!("attachment; filename=\"{}.xml\"", name.trim()),
+        )
         .body(axum::body::Body::from(xml))
         .unwrap())
 }

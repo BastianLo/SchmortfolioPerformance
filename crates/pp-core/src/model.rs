@@ -18,6 +18,8 @@ pub struct Client {
     pub portfolios: Vec<Portfolio>,
     pub taxonomies: Vec<Taxonomy>,
     pub watchlists: Vec<Watchlist>,
+    #[serde(default)]
+    pub plans: Vec<crate::plan::InvestmentPlan>,
     /// Data that is kept for lossless round trips but not (yet) interpreted:
     /// investment plans, dashboards, settings, properties.
     #[serde(default)]

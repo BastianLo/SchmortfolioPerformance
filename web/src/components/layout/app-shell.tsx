@@ -4,7 +4,9 @@ import {
   ArrowLeftRight,
   BarChart3,
   Briefcase,
+  CalendarClock,
   Coins,
+  Eye,
   FolderOpen,
   LayoutDashboard,
   LogOut,
@@ -23,6 +25,7 @@ import { api, unwrap } from "@/api/client";
 import { useClients, useMe } from "@/api/hooks";
 import { Dialog } from "@/components/ui/dialog";
 import { useClientId } from "@/lib/client-id";
+import { FilterProvider } from "@/lib/filter-context";
 import { PeriodProvider } from "@/lib/period-context";
 import { type ThemeMode, useTheme } from "@/lib/theme";
 import { cn, setStorage } from "@/lib/utils";
@@ -35,6 +38,8 @@ const NAV = [
   { to: "/c/$clientId/transactions", label: "Buchungen", icon: ArrowLeftRight, mobile: true },
   { to: "/c/$clientId/securities", label: "Wertpapiere", icon: BarChart3 },
   { to: "/c/$clientId/accounts", label: "Konten & Depots", icon: Wallet },
+  { to: "/c/$clientId/plans", label: "Sparpläne", icon: CalendarClock },
+  { to: "/c/$clientId/watchlists", label: "Watchlists", icon: Eye },
   { to: "/c/$clientId/import", label: "Import", icon: Upload },
   { to: "/c/$clientId/earnings", label: "Erträge", icon: Coins },
   { to: "/c/$clientId/taxonomies", label: "Klassifizierungen", icon: PieChart },
@@ -251,15 +256,17 @@ export function AppShell() {
   React.useEffect(() => setStorage("lastClient", clientId), [clientId]);
   return (
     <PeriodProvider>
-      <div className="flex min-h-dvh">
-        <Sidebar />
-        <div className="min-w-0 flex-1">
-          <MobileNav />
-          <main className="mx-auto max-w-7xl px-4 pt-4 pb-24 sm:px-6 sm:pt-6 lg:px-8 lg:pb-10">
-            <Outlet />
-          </main>
+      <FilterProvider clientId={clientId}>
+        <div className="flex min-h-dvh">
+          <Sidebar />
+          <div className="min-w-0 flex-1">
+            <MobileNav />
+            <main className="mx-auto max-w-7xl px-4 pt-4 pb-24 sm:px-6 sm:pt-6 lg:px-8 lg:pb-10">
+              <Outlet />
+            </main>
+          </div>
         </div>
-      </div>
+      </FilterProvider>
     </PeriodProvider>
   );
 }

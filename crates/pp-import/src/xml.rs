@@ -204,10 +204,14 @@ impl<'a, 'input> XmlReader<'a, 'input> {
             .child(root, "properties")
             .map(|p| self.map_entries(p))
             .unwrap_or_default();
-        let plans = self
+        let plans: Vec<pp_core::plan::InvestmentPlan> = self
             .child(root, "plans")
-            .map(|p| elements(p).count())
-            .unwrap_or(0);
+            .map(|p| {
+                elements(p)
+                    .filter_map(|n| self.plan(self.resolve(n)))
+                    .collect()
+            })
+            .unwrap_or_default();
 
         Ok(Client {
             version,
@@ -217,7 +221,36 @@ impl<'a, 'input> XmlReader<'a, 'input> {
             portfolios,
             taxonomies,
             watchlists,
-            extra: serde_json::json!({ "properties": properties, "investment_plans": plans }),
+            plans,
+            extra: serde_json::json!({ "properties": properties }),
+        })
+    }
+
+    fn plan(&self, n: Node<'a, 'input>) -> Option<pp_core::plan::InvestmentPlan> {
+        use pp_core::plan::{InvestmentPlan, PlanType};
+        let security = self.child(n, "security").map(|s| self.uuid(s));
+        let kind = self
+            .text(n, "type")
+            .and_then(|t| PlanType::parse(&t))
+            .unwrap_or(PlanType::PurchaseOrDelivery);
+        Some(InvestmentPlan {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: self.text(n, "name").unwrap_or_default(),
+            note: self.text(n, "note"),
+            kind,
+            security,
+            portfolio: self.child(n, "portfolio").map(|p| self.uuid(p)),
+            account: self.child(n, "account").map(|a| self.uuid(a)),
+            auto_generate: self.text_bool(n, "autoGenerate"),
+            start: self.text(n, "start").as_deref().and_then(parse_date_time)?,
+            interval: self.text_i64(n, "interval") as i32,
+            amount: self.text_i64(n, "amount"),
+            fees: self.text_i64(n, "fees"),
+            taxes: self.text_i64(n, "taxes"),
+            transactions: self
+                .child(n, "transactions")
+                .map(|t| elements(t).map(|x| self.uuid(x)).collect())
+                .unwrap_or_default(),
         })
     }
 

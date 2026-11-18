@@ -461,9 +461,35 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
         portfolios,
         taxonomies,
         watchlists,
+        plans: pc
+            .plans
+            .iter()
+            .map(|p| pp_core::plan::InvestmentPlan {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: p.name.clone(),
+                note: p.note.clone(),
+                kind: match p.r#type() {
+                    pb::p_investment_plan::Type::PurchaseOrDelivery => {
+                        pp_core::plan::PlanType::PurchaseOrDelivery
+                    }
+                    pb::p_investment_plan::Type::Deposit => pp_core::plan::PlanType::Deposit,
+                    pb::p_investment_plan::Type::Removal => pp_core::plan::PlanType::Removal,
+                    pb::p_investment_plan::Type::Interest => pp_core::plan::PlanType::Interest,
+                },
+                security: p.security.clone(),
+                portfolio: p.portfolio.clone(),
+                account: p.account.clone(),
+                auto_generate: p.auto_generate,
+                start: epoch_day(p.date).and_hms_opt(0, 0, 0).unwrap(),
+                interval: p.interval,
+                amount: p.amount,
+                fees: p.fees,
+                taxes: p.taxes,
+                transactions: p.transactions.clone(),
+            })
+            .collect(),
         extra: serde_json::json!({
             "properties": pc.properties,
-            "investment_plans": pc.plans.len(),
         }),
     };
     Ok((client, warnings))

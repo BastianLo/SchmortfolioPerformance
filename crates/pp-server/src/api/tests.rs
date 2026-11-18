@@ -996,3 +996,181 @@ async fn pdf_import_preview_commit_and_attachment() {
     assert!(again["items"][0]["transactions"][0]["duplicate_of"].is_string());
     assert!(again["items"][0]["transactions"][0]["security_id"].is_string());
 }
+
+#[tokio::test]
+async fn investment_plans() {
+    let (app, _) = app_with(test_config(), None).await;
+    let cookie = setup_admin(&app).await;
+    let id = call(&app, "POST", "/api/v1/clients/demo", None, Some(&cookie))
+        .await
+        .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let plans = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/plans"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(plans.json.as_array().unwrap().len(), 1);
+    // nothing due yet for the demo plan
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/plans/demo-plan-world/execute"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.json["created"], 0);
+
+    let start = (crate::api::today() - chrono::Duration::days(70))
+        .format("%Y-%m-%dT00:00:00")
+        .to_string();
+    let r = call(&app, "POST", &format!("/api/v1/clients/{id}/plans"), Some(json!({
+        "name": "Tagesgeld", "kind": "DEPOSIT", "account": "demo-acc-savings", "start": start, "interval": 1, "amount": 10000
+    })), Some(&cookie)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json);
+    let pid = r.json.as_str().unwrap().to_string();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/plans/{pid}/execute"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    let n = r.json["created"].as_u64().unwrap();
+    assert!((2..=3).contains(&n), "{:?}", r.json);
+    // executing again creates nothing
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/plans/{pid}/execute"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.json["created"], 0);
+    let plans = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/plans"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    let p = plans
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == pid.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(p["executions"].as_u64().unwrap(), n);
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/clients/{id}/plans/{pid}"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn edit_watchlists_and_taxonomies() {
+    let (app, _) = app_with(test_config(), None).await;
+    let cookie = setup_admin(&app).await;
+    let id = call(&app, "POST", "/api/v1/clients/demo", None, Some(&cookie))
+        .await
+        .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/clients/{id}/watchlists"),
+        Some(json!([{"name": "Favoriten", "securities": ["demo-sec-0", "unknown"]}])),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let w = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/watchlists"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(
+        w.json,
+        json!([{"name": "Favoriten", "securities": ["demo-sec-0"]}])
+    );
+
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/clients/{id}/taxonomies/demo-assetclasses/classifications"),
+        Some(json!({"name": "Rohstoffe", "color": "#a16207", "weight": 0})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json);
+    let cid = r.json.as_str().unwrap().to_string();
+    let r = call(&app, "PUT", &format!("/api/v1/clients/{id}/taxonomies/demo-assetclasses/classifications/{cid}"),
+        Some(json!({"name": "Rohstoffe", "weight": 500, "assignments": [{"vehicle": "demo-sec-5", "weight": 5000}]})), Some(&cookie)).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let t = call(
+        &app,
+        "GET",
+        &format!("/api/v1/clients/{id}/reports/taxonomies/demo-assetclasses"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    let node = t.json["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["id"] == cid.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(node["weight"], 500);
+    assert!(node["value"].as_i64().unwrap() > 0);
+    // root cannot be deleted while it has children
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/clients/{id}/taxonomies/demo-assetclasses/classifications/ac-root"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/clients/{id}/taxonomies/demo-assetclasses/classifications/{cid}"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+}

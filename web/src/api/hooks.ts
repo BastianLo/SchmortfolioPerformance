@@ -29,38 +29,46 @@ export function useClient(id: string) {
   });
 }
 
-export function useDashboard(id: string, period: Period, taxonomy?: string) {
+export function useDashboard(id: string, period: Period, taxonomy?: string, filter?: string) {
   return useQuery({
-    queryKey: [...qk.client(id), "dashboard", period, taxonomy],
-    queryFn: () =>
-      unwrap(api.GET("/clients/{id}/reports/dashboard", { params: { path: { id }, query: { ...period, taxonomy } } })),
-    placeholderData: keepPreviousData,
-  });
-}
-
-export function useHoldings(id: string, date?: string) {
-  return useQuery({
-    queryKey: [...qk.client(id), "holdings", date],
-    queryFn: () => unwrap(api.GET("/clients/{id}/reports/holdings", { params: { path: { id }, query: { date } } })),
-    placeholderData: keepPreviousData,
-  });
-}
-
-export function usePerformance(id: string, period: Period, interval?: string) {
-  return useQuery({
-    queryKey: [...qk.client(id), "performance", period, interval],
+    queryKey: [...qk.client(id), "dashboard", period, taxonomy, filter],
     queryFn: () =>
       unwrap(
-        api.GET("/clients/{id}/reports/performance", { params: { path: { id }, query: { ...period, interval } } }),
+        api.GET("/clients/{id}/reports/dashboard", {
+          params: { path: { id }, query: { ...period, taxonomy, filter } },
+        }),
       ),
     placeholderData: keepPreviousData,
   });
 }
 
-export function useEarnings(id: string, period: Period) {
+export function useHoldings(id: string, date?: string, filter?: string) {
   return useQuery({
-    queryKey: [...qk.client(id), "earnings", period],
-    queryFn: () => unwrap(api.GET("/clients/{id}/reports/earnings", { params: { path: { id }, query: period } })),
+    queryKey: [...qk.client(id), "holdings", date, filter],
+    queryFn: () =>
+      unwrap(api.GET("/clients/{id}/reports/holdings", { params: { path: { id }, query: { date, filter } } })),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function usePerformance(id: string, period: Period, interval?: string, filter?: string) {
+  return useQuery({
+    queryKey: [...qk.client(id), "performance", period, interval, filter],
+    queryFn: () =>
+      unwrap(
+        api.GET("/clients/{id}/reports/performance", {
+          params: { path: { id }, query: { ...period, interval, filter } },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useEarnings(id: string, period: Period, filter?: string) {
+  return useQuery({
+    queryKey: [...qk.client(id), "earnings", period, filter],
+    queryFn: () =>
+      unwrap(api.GET("/clients/{id}/reports/earnings", { params: { path: { id }, query: { ...period, filter } } })),
     placeholderData: keepPreviousData,
   });
 }
@@ -125,9 +133,9 @@ export function useTaxonomies(id: string) {
   });
 }
 
-export function useTaxonomy(id: string, tid: string | undefined) {
+export function useTaxonomy(id: string, tid: string | undefined, filter?: string) {
   return useQuery({
-    queryKey: [...qk.client(id), "taxonomy", tid],
+    queryKey: [...qk.client(id), "taxonomy", tid, filter],
     queryFn: () =>
       unwrap(api.GET("/clients/{id}/reports/taxonomies/{tid}", { params: { path: { id, tid: tid as string } } })),
     enabled: !!tid,
@@ -150,5 +158,19 @@ export function useDeleteTransaction(id: string) {
     mutationFn: (tid: string) =>
       unwrap(api.DELETE("/clients/{id}/transactions/{tid}", { params: { path: { id, tid } } })),
     onSuccess: invalidate,
+  });
+}
+
+export function usePlans(id: string) {
+  return useQuery({
+    queryKey: [...qk.client(id), "plans"],
+    queryFn: () => unwrap(api.GET("/clients/{id}/plans", { params: { path: { id } } })),
+  });
+}
+
+export function useWatchlists(id: string) {
+  return useQuery({
+    queryKey: [...qk.client(id), "watchlists"],
+    queryFn: () => unwrap(api.GET("/clients/{id}/watchlists", { params: { path: { id } } })),
   });
 }

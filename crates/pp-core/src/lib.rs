@@ -2,12 +2,14 @@
 //! performance calculations. No IO, no clock, no database.
 
 pub mod booking;
+pub mod filter;
 pub mod fx;
 pub mod index;
 pub mod math;
 pub mod model;
 pub mod money;
 pub mod performance;
+pub mod plan;
 pub mod security;
 pub mod snapshot;
 

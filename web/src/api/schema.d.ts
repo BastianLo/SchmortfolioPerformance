@@ -216,6 +216,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients/{id}/export/pp-xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exports the client as Portfolio Performance XML file. */
+        get: operations["export_pp_xml"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/clients/{id}/files/{hash}": {
         parameters: {
             query?: never;
@@ -281,6 +298,55 @@ export interface paths {
         put?: never;
         /** Reads PDF (or text) documents and returns the recognised transactions. */
         post: operations["preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_plans"];
+        put?: never;
+        post: operations["create_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/plans/{pid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_plan"];
+        post?: never;
+        delete: operations["delete_plan"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/plans/{pid}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Books all due executions of a plan until today. */
+        post: operations["execute_plan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -481,6 +547,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients/{id}/taxonomies/{tid}/classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_classification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/taxonomies/{tid}/classifications/{cid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_classification"];
+        post?: never;
+        delete: operations["delete_classification"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/clients/{id}/transactions": {
         parameters: {
             query?: never;
@@ -524,7 +622,8 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_watchlists"];
-        put?: never;
+        /** Replaces all watchlists of a client. */
+        put: operations["put_watchlists"];
         post?: never;
         delete?: never;
         options?: never;
@@ -615,6 +714,15 @@ export interface components {
             /** Format: int64 */
             value: number;
         };
+        AssignmentInput: {
+            /** @description security or account id */
+            vehicle: string;
+            /**
+             * Format: int32
+             * @description basis 10000 = 100 %
+             */
+            weight: number;
+        };
         AssignmentValue: {
             name: string;
             /** Format: int64 */
@@ -694,6 +802,19 @@ export interface components {
             name: string;
             /** Format: double */
             share: number;
+        };
+        ClassificationInput: {
+            assignments?: components["schemas"]["AssignmentInput"][] | null;
+            color?: string | null;
+            name: string;
+            note?: string | null;
+            /** @description for new classifications */
+            parent_id?: string | null;
+            /**
+             * Format: int32
+             * @description target weight within the parent (basis 10000)
+             */
+            weight: number;
         };
         ClientDetail: components["schemas"]["ClientDto"] & {
             counts: components["schemas"]["Counts"];
@@ -828,6 +949,10 @@ export interface components {
             /** Format: int64 */
             rates: number;
         };
+        ExecuteResult: {
+            created: number;
+            errors: string[];
+        };
         FeedConfigDto: {
             /** @description JSON path to the close values */
             close_path?: string | null;
@@ -924,6 +1049,31 @@ export interface components {
             file_version: number;
             format: string;
             warnings: string[];
+        };
+        InvestmentPlan: {
+            account?: null | components["schemas"]["String"];
+            /** Format: int64 */
+            amount: number;
+            auto_generate: boolean;
+            /** Format: int64 */
+            fees: number;
+            id: components["schemas"]["String"];
+            /**
+             * Format: int32
+             * @description months (1..99) or weeks + 100 (101..)
+             */
+            interval: number;
+            kind: components["schemas"]["PlanType"];
+            name: string;
+            note?: string | null;
+            portfolio?: null | components["schemas"]["String"];
+            security?: null | components["schemas"]["String"];
+            /** Format: date-time */
+            start: string;
+            /** Format: int64 */
+            taxes: number;
+            /** @description ids of the generated transactions */
+            transactions: components["schemas"]["String"][];
         };
         LogoutResponse: {
             /** @description URL of the identity provider to end the SSO session, if available */
@@ -1047,6 +1197,38 @@ export interface components {
             /** Format: int32 */
             year: number;
         };
+        PlanDto: components["schemas"]["InvestmentPlan"] & {
+            account_name?: string | null;
+            executions: number;
+            /** Format: date */
+            next_date: string;
+            portfolio_name?: string | null;
+            security_name?: string | null;
+        };
+        PlanInput: {
+            account?: string | null;
+            /** Format: int64 */
+            amount: number;
+            auto_generate?: boolean;
+            /** Format: int64 */
+            fees?: number;
+            /**
+             * Format: int32
+             * @description months (1..99) or weeks + 100
+             */
+            interval: number;
+            kind: components["schemas"]["PlanType"];
+            name: string;
+            note?: string | null;
+            portfolio?: string | null;
+            security?: string | null;
+            /** Format: date-time */
+            start: string;
+            /** Format: int64 */
+            taxes?: number;
+        };
+        /** @enum {string} */
+        PlanType: "PURCHASE_OR_DELIVERY" | "DEPOSIT" | "REMOVAL" | "INTEREST";
         PortfolioDto: {
             id: string;
             name: string;
@@ -1229,6 +1411,7 @@ export interface components {
              */
             ttwror: number;
         };
+        String: string;
         TaxonomyInfo: {
             classifications: number;
             id: string;
@@ -1317,6 +1500,10 @@ export interface components {
             name: string;
         };
         WatchlistDto: {
+            name: string;
+            securities: string[];
+        };
+        WatchlistInput: {
             name: string;
             securities: string[];
         };
@@ -1749,6 +1936,27 @@ export interface operations {
             };
         };
     };
+    export_pp_xml: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": unknown;
+                };
+            };
+        };
+    };
     download: {
         parameters: {
             query?: never;
@@ -1843,6 +2051,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PdfPreview"];
+                };
+            };
+        };
+    };
+    list_plans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanDto"][];
+                };
+            };
+        };
+    };
+    create_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanInput"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    update_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanInput"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    execute_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecuteResult"];
                 };
             };
         };
@@ -1974,6 +2294,8 @@ export interface operations {
                 from?: string | null;
                 to?: string | null;
                 taxonomy?: string | null;
+                /** @description restrict to portfolios / accounts (comma separated ids) */
+                filter?: string | null;
             };
             header?: never;
             path: {
@@ -2000,6 +2322,8 @@ export interface operations {
                 from?: string | null;
                 /** @description end date (inclusive), ISO format */
                 to?: string | null;
+                /** @description restrict to portfolios / accounts (comma separated ids) */
+                filter?: string | null;
             };
             header?: never;
             path: {
@@ -2024,6 +2348,8 @@ export interface operations {
             query?: {
                 /** @description valuation date (default today) */
                 date?: string | null;
+                /** @description restrict to portfolios / accounts (comma separated ids) */
+                filter?: string | null;
             };
             header?: never;
             path: {
@@ -2050,6 +2376,8 @@ export interface operations {
                 to?: string | null;
                 /** @description day, week, month, year (default: automatic) */
                 interval?: string | null;
+                /** @description restrict to portfolios / accounts (comma separated ids) */
+                filter?: string | null;
             };
             header?: never;
             path: {
@@ -2074,6 +2402,8 @@ export interface operations {
             query?: {
                 /** @description valuation date (default today) */
                 date?: string | null;
+                /** @description restrict to portfolios / accounts (comma separated ids) */
+                filter?: string | null;
             };
             header?: never;
             path: {
@@ -2282,6 +2612,84 @@ export interface operations {
             };
         };
     };
+    create_classification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                tid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassificationInput"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    update_classification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                tid: string;
+                cid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassificationInput"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_classification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                tid: string;
+                cid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_transactions: {
         parameters: {
             query?: {
@@ -2440,6 +2848,29 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WatchlistDto"][];
                 };
+            };
+        };
+    };
+    put_watchlists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistInput"][];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

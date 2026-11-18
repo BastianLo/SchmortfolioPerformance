@@ -3,11 +3,13 @@ import type { ColumnDef } from "@tanstack/react-table";
 import * as React from "react";
 import type { Schemas } from "@/api/client";
 import { useHoldings } from "@/api/hooks";
+import { FilterPicker } from "@/components/filter-picker";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { ErrorBox, PageHeader, Skeleton, Stat } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
+import { useFilter } from "@/lib/filter-context";
 import { money, percent, quote, shares, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +18,7 @@ type Row = Schemas["HoldingRow"];
 export function HoldingsPage() {
   const clientId = useClientId();
   const [date, setDate] = React.useState<string>("");
-  const { data, error, isLoading } = useHoldings(clientId, date || undefined);
+  const { data, error, isLoading } = useHoldings(clientId, date || undefined, useFilter().filter);
   const navigate = useNavigate();
   const cur = data?.currency ?? "EUR";
 
@@ -107,13 +109,16 @@ export function HoldingsPage() {
         title="Vermögensaufstellung"
         subtitle="Bestand, Einstand nach FIFO und Gewinne je Wertpapier"
         actions={
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-40"
-            aria-label="Stichtag"
-          />
+          <>
+            <FilterPicker />
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-40"
+              aria-label="Stichtag"
+            />
+          </>
         }
       />
       {error ? (

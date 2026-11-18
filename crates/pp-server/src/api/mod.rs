@@ -3,8 +3,10 @@
 mod clients;
 mod data;
 mod dto;
+mod edit;
 mod fx;
 mod imports;
+pub mod plans;
 mod reports;
 
 pub use dto::today;
@@ -43,6 +45,8 @@ fn api_router() -> OpenApiRouter<SharedState> {
         .merge(reports::router())
         .merge(fx::router())
         .merge(imports::router())
+        .merge(plans::router())
+        .merge(edit::router())
 }
 
 pub fn openapi_json() -> String {

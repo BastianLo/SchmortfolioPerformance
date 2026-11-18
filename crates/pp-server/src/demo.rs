@@ -742,6 +742,27 @@ pub fn generate(today: NaiveDate) -> Client {
         name: "Einzelwerte".into(),
         securities: vec![sec_ids[3].clone(), sec_ids[4].clone()],
     });
+    // a savings plan that continues the monthly ETF purchase from next month on
+    let next = add_months(
+        NaiveDate::from_ymd_opt(today.year(), today.month(), 15).unwrap(),
+        1,
+    );
+    b.client.plans.push(pp_core::plan::InvestmentPlan {
+        id: "demo-plan-world".into(),
+        name: "Welt-ETF monatlich".into(),
+        note: None,
+        kind: pp_core::plan::PlanType::PurchaseOrDelivery,
+        security: Some(sec_ids[0].clone()),
+        portfolio: Some("demo-pf".into()),
+        account: Some("demo-acc-main".into()),
+        auto_generate: true,
+        start: next.and_hms_opt(0, 0, 0).unwrap(),
+        interval: 1,
+        amount: 500_00,
+        fees: 1_50,
+        taxes: 0,
+        transactions: vec![],
+    });
     b.client.normalize();
     b.client
 }

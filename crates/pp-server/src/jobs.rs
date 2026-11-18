@@ -19,6 +19,9 @@ pub fn spawn(state: SharedState) {
             {
                 tracing::warn!("quote update failed: {e:#}");
             }
+            if let Err(e) = crate::api::plans::execute_all(&state).await {
+                tracing::warn!("investment plans failed: {e:#}");
+            }
             if let Ok(n) = state.db.purge_sessions().await
                 && n > 0
             {

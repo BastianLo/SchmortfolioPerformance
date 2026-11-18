@@ -507,6 +507,8 @@ fn holdings(c: &LoadedClient, date: NaiveDate) -> Holdings {
 struct DateQuery {
     /// valuation date (default today)
     date: Option<NaiveDate>,
+    /// restrict to portfolios / accounts (comma separated ids)
+    filter: Option<String>,
 }
 
 #[utoipa::path(get, path = "/clients/{id}/reports/holdings", tag = "reports", params(("id" = String, Path), DateQuery), responses((status = 200, body = Holdings)))]
@@ -516,7 +518,10 @@ async fn get_holdings(
     Path(id): Path<String>,
     Query(q): Query<DateQuery>,
 ) -> ApiResult<Json<Holdings>> {
-    let c = state.client(&user, &id).await?;
+    let c = state
+        .client(&user, &id)
+        .await?
+        .filtered(q.filter.as_deref());
     let date = q.date.unwrap_or_else(today);
     Ok(Json(
         tokio::task::spawn_blocking(move || holdings(&c, date))
@@ -565,6 +570,8 @@ struct DashboardQuery {
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
     taxonomy: Option<String>,
+    /// restrict to portfolios / accounts (comma separated ids)
+    filter: Option<String>,
 }
 
 fn earning_rows(c: &Client, entries: &[pp_core::security::EarningEntry]) -> Vec<EarningRow> {
@@ -653,10 +660,14 @@ async fn get_dashboard(
     Path(id): Path<String>,
     Query(q): Query<DashboardQuery>,
 ) -> ApiResult<Json<Dashboard>> {
-    let c = state.client(&user, &id).await?;
+    let c = state
+        .client(&user, &id)
+        .await?
+        .filtered(q.filter.as_deref());
     let (from, to) = PeriodQuery {
         from: q.from,
         to: q.to,
+        filter: None,
     }
     .resolve(&c.client)?;
     let taxonomy = q.taxonomy.clone();
@@ -692,6 +703,8 @@ struct PerformanceQuery {
     to: Option<NaiveDate>,
     /// day, week, month, year (default: automatic)
     interval: Option<String>,
+    /// restrict to portfolios / accounts (comma separated ids)
+    filter: Option<String>,
 }
 
 fn period_returns(idx: &PerformanceIndex) -> Vec<PeriodReturn> {
@@ -730,10 +743,14 @@ async fn get_performance(
     Path(id): Path<String>,
     Query(q): Query<PerformanceQuery>,
 ) -> ApiResult<Json<PerformanceReport>> {
-    let c = state.client(&user, &id).await?;
+    let c = state
+        .client(&user, &id)
+        .await?
+        .filtered(q.filter.as_deref());
     let (from, to) = PeriodQuery {
         from: q.from,
         to: q.to,
+        filter: None,
     }
     .resolve(&c.client)?;
     let report = tokio::task::spawn_blocking(move || {
@@ -796,7 +813,10 @@ async fn get_earnings(
     Path(id): Path<String>,
     Query(q): Query<PeriodQuery>,
 ) -> ApiResult<Json<EarningsReport>> {
-    let c = state.client(&user, &id).await?;
+    let c = state
+        .client(&user, &id)
+        .await?
+        .filtered(q.filter.as_deref());
     let (from, to) = q.resolve(&c.client)?;
     let conv = c.converter();
     let entries = earnings(&c.client, &conv, from, to);
@@ -937,7 +957,10 @@ async fn get_taxonomy(
     Path((id, tid)): Path<(String, String)>,
     Query(q): Query<DateQuery>,
 ) -> ApiResult<Json<TaxonomyReport>> {
-    let c = state.client(&user, &id).await?;
+    let c = state
+        .client(&user, &id)
+        .await?
+        .filtered(q.filter.as_deref());
     let t = c
         .client
         .taxonomies

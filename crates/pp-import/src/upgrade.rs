@@ -62,6 +62,22 @@ pub(crate) fn upgrade(client: &mut Client, warnings: &mut Vec<String>) {
         scale_shares(client, 100);
         scale_quotes(client, 10_000);
     }
+    if v < 60 {
+        // plan types introduced: derived from the portfolio / sign of the amount
+        use pp_core::plan::PlanType;
+        for p in &mut client.plans {
+            if p.portfolio.is_some() {
+                p.kind = PlanType::PurchaseOrDelivery;
+            } else {
+                p.kind = if p.amount >= 0 {
+                    PlanType::Deposit
+                } else {
+                    PlanType::Removal
+                };
+                p.amount = p.amount.abs();
+            }
+        }
+    }
     if v < crate::MAX_SUPPORTED_VERSION {
         client.version = crate::MAX_SUPPORTED_VERSION;
     }

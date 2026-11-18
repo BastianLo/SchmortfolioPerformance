@@ -70,6 +70,8 @@ pub struct PeriodQuery {
     pub from: Option<NaiveDate>,
     /// end date (inclusive), ISO format
     pub to: Option<NaiveDate>,
+    /// restrict to portfolios / accounts (comma separated ids)
+    pub filter: Option<String>,
 }
 
 pub fn today() -> NaiveDate {

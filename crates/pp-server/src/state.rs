@@ -21,6 +21,36 @@ pub struct LoadedClient {
 }
 
 impl LoadedClient {
+    /// Restricts the client to the given portfolio/account ids (comma
+    /// separated); `None` or empty returns the client unchanged.
+    pub fn filtered(self: Arc<Self>, filter: Option<&str>) -> Arc<LoadedClient> {
+        let ids: Vec<String> = filter
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if ids.is_empty() {
+            return self;
+        }
+        let pf: Vec<String> = ids
+            .iter()
+            .filter(|i| self.client.portfolio(i).is_some())
+            .cloned()
+            .collect();
+        let acc: Vec<String> = ids
+            .iter()
+            .filter(|i| self.client.account(i).is_some())
+            .cloned()
+            .collect();
+        Arc::new(LoadedClient {
+            meta: self.meta.clone(),
+            client: pp_core::filter::filter_client(&self.client, &pf, &acc),
+            provider: self.provider.clone(),
+            fx_version: self.fx_version,
+        })
+    }
+
     pub fn converter(&self) -> CurrencyConverter {
         CurrencyConverter::new(self.provider.clone(), self.client.base_currency.clone())
     }

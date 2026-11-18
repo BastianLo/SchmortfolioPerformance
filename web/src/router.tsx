@@ -12,11 +12,13 @@ import { HoldingsPage } from "./pages/holdings";
 import { ImportPage } from "./pages/import";
 import { LoginPage } from "./pages/login";
 import { PerformancePage } from "./pages/performance";
+import { PlansPage } from "./pages/plans";
 import { SecuritiesPage } from "./pages/securities";
 import { SecurityDetailPage } from "./pages/security-detail";
 import { SettingsPage } from "./pages/settings";
 import { TaxonomiesPage } from "./pages/taxonomies";
 import { TransactionsPage } from "./pages/transactions";
+import { WatchlistsPage } from "./pages/watchlists";
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: () => <Outlet />,
@@ -90,6 +92,12 @@ const taxonomiesRoute = createRoute({
   component: TaxonomiesPage,
 });
 const settingsRoute = createRoute({ getParentRoute: () => clientRoute, path: "/settings", component: SettingsPage });
+const plansRoute = createRoute({ getParentRoute: () => clientRoute, path: "/plans", component: PlansPage });
+const watchlistsRoute = createRoute({
+  getParentRoute: () => clientRoute,
+  path: "/watchlists",
+  component: WatchlistsPage,
+});
 const importRoute = createRoute({ getParentRoute: () => clientRoute, path: "/import", component: ImportPage });
 const transactionsRoute = createRoute({
   getParentRoute: () => clientRoute,
@@ -114,6 +122,8 @@ const routeTree = rootRoute.addChildren([
       accountsRoute,
       transactionsRoute,
       importRoute,
+      plansRoute,
+      watchlistsRoute,
       earningsRoute,
       taxonomiesRoute,
       settingsRoute,
