@@ -344,3 +344,23 @@ Die Zeitangaben gelten grob für eine Person in Teilzeit mit KI-Unterstützung. 
 2. M0 umsetzen: Workspace-Gerüst, Frontend-Gerüst, Dockerfile, CI.
 3. Testkorpus sammeln: eigene PP-Datei(en) anonymisieren (Skript dafür ist Teil von M2), Referenzwerte aus PP exportieren.
 4. `client.proto` und die XML-Struktur aus dem aktuellen PP-Release analysieren → ADR-002 „Import-Mapping“.
+
+---
+
+## 18. Umsetzungsstand (2026-11-18)
+
+| Meilenstein | Stand |
+|---|---|
+| M0 Fundament | ✅ Workspace, Frontend-Gerüst, Dockerfile (multi-stage, distroless), compose, GitHub Actions (Rust, Web, OpenAPI-Abgleich, Multi-Arch-Image) |
+| M1 Modell, Persistenz, API, Auth | ✅ inkl. OIDC (PKCE, Gruppen, Admin-Gruppe, RP-Logout); Tests mit einem simulierten Identity Provider |
+| M2 PP-Import | ✅ XML (Pfad- und ID-Referenzen), Protobuf, AES-verschlüsselt, ZIP, Migrationen alter Versionen; Testkorpus aus der PP-Testsuite |
+| M3 Rechenkern I | ✅ Snapshot, FIFO/Durchschnitt, realisierte und nicht realisierte G/V, Erträge; Golden Tests cent-genau |
+| M4 Rechenkern II + UI | ✅ TTWROR, IRR, Drawdown, Volatilität (PP-identisch auf 10⁻¹⁰), alle Auswertungsseiten, PWA, mobile Ansicht |
+
+**Abweichungen vom Plan und offene Punkte**
+- Transaktions-Units werden als JSON-Spalte gespeichert statt in einer eigenen Tabelle (einfacher, für Auswertungen ohne Nachteil).
+- Nur SQLite; Postgres ist weiterhin optional geplant.
+- Die Aufteilung der Kursgewinne in Kurs- und Währungsgewinne wie in PP fehlt noch; realisierte Gewinne werden über FIFO ermittelt.
+- Performance je Depot, Konto oder Filter (PP-„Client-Filter“) fehlt noch; Auswertungen gelten für das ganze Portfolio.
+- Buchungen in Fremdwährung sowie Umbuchungen und Einlieferungen können noch nicht erfasst werden (Import und Auswertung funktionieren); das folgt mit M5.
+- Der Docker-Build wurde lokal nicht ausgeführt (kein Docker-Daemon in der Entwicklungsumgebung); die CI baut das Image.

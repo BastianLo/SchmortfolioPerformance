@@ -637,20 +637,24 @@ pub fn generate(today: NaiveDate) -> Client {
         weight: w,
         rank: 0,
     };
-    let class =
-        |id: &str, parent: Option<&str>, name: &str, color: &str, assignments: Vec<Assignment>| {
-            Classification {
-                id: id.into(),
-                parent_id: parent.map(String::from),
-                name: name.into(),
-                note: None,
-                color: Some(color.into()),
-                weight: 10000,
-                rank: 0,
-                assignments,
-                data: serde_json::Value::Null,
-            }
-        };
+    let class = |id: &str,
+                 parent: Option<&str>,
+                 name: &str,
+                 color: &str,
+                 weight: i32,
+                 assignments: Vec<Assignment>| {
+        Classification {
+            id: id.into(),
+            parent_id: parent.map(String::from),
+            name: name.into(),
+            note: None,
+            color: Some(color.into()),
+            weight,
+            rank: 0,
+            assignments,
+            data: serde_json::Value::Null,
+        }
+    };
     let sec_ids: Vec<String> = b.client.securities.iter().map(|s| s.id.clone()).collect();
     let by = |pred: &dyn Fn(&Spec) -> bool| -> Vec<Assignment> {
         SPECS
@@ -666,12 +670,13 @@ pub fn generate(today: NaiveDate) -> Client {
         source: None,
         dimensions: vec![],
         classifications: vec![
-            class("ac-root", None, "Anlageklassen", "#64748b", vec![]),
+            class("ac-root", None, "Anlageklassen", "#64748b", 10000, vec![]),
             class(
                 "ac-equity",
                 Some("ac-root"),
                 "Aktien",
                 "#3b82f6",
+                7000,
                 by(&|s| s.asset_class == "equity"),
             ),
             class(
@@ -679,6 +684,7 @@ pub fn generate(today: NaiveDate) -> Client {
                 Some("ac-root"),
                 "Anleihen",
                 "#f59e0b",
+                2000,
                 by(&|s| s.asset_class == "bonds"),
             ),
             class(
@@ -686,6 +692,7 @@ pub fn generate(today: NaiveDate) -> Client {
                 Some("ac-root"),
                 "Barvermögen",
                 "#10b981",
+                1000,
                 vec![a("demo-acc-main", 10000), a("demo-acc-savings", 10000)],
             ),
         ],
@@ -696,12 +703,13 @@ pub fn generate(today: NaiveDate) -> Client {
         source: None,
         dimensions: vec![],
         classifications: vec![
-            class("rg-root", None, "Regionen", "#64748b", vec![]),
+            class("rg-root", None, "Regionen", "#64748b", 10000, vec![]),
             class(
                 "rg-world",
                 Some("rg-root"),
                 "Welt",
                 "#6366f1",
+                5000,
                 by(&|s| s.region == "world"),
             ),
             class(
@@ -709,6 +717,7 @@ pub fn generate(today: NaiveDate) -> Client {
                 Some("rg-root"),
                 "Europa",
                 "#0ea5e9",
+                2500,
                 by(&|s| s.region == "europe"),
             ),
             class(
@@ -716,6 +725,7 @@ pub fn generate(today: NaiveDate) -> Client {
                 Some("rg-root"),
                 "Nordamerika",
                 "#ef4444",
+                1500,
                 by(&|s| s.region == "na"),
             ),
             class(
@@ -723,6 +733,7 @@ pub fn generate(today: NaiveDate) -> Client {
                 Some("rg-root"),
                 "Schwellenländer",
                 "#22c55e",
+                1000,
                 by(&|s| s.region == "em"),
             ),
         ],

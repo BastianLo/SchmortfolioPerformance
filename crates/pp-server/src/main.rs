@@ -14,6 +14,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("healthcheck") {
+        std::process::exit(healthcheck());
+    }
     if args.get(1).map(String::as_str) == Some("openapi") {
         println!("{}", api::openapi_json());
         return Ok(());
@@ -87,4 +90,27 @@ async fn shutdown() {
     #[cfg(not(unix))]
     let term = std::future::pending::<()>();
     tokio::select! { _ = ctrl_c => {}, _ = term => {} }
+}
+
+/// Minimal HTTP probe for container health checks (no curl in the image).
+fn healthcheck() -> i32 {
+    use std::io::{Read, Write};
+    let bind = std::env::var("PP_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let port = bind.rsplit(':').next().unwrap_or("8080");
+    let Ok(mut s) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+        return 1;
+    };
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+    if s.write_all(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        .is_err()
+    {
+        return 1;
+    }
+    let mut buf = String::new();
+    let _ = s.read_to_string(&mut buf);
+    if buf.starts_with("HTTP/1.1 200") || buf.starts_with("HTTP/1.0 200") {
+        0
+    } else {
+        1
+    }
 }

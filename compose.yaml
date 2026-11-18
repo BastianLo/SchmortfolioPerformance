@@ -1,0 +1,21 @@
+services:
+  schmortfolio:
+    image: ghcr.io/bastianlo/schmortfolioperformance:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      PP_PUBLIC_URL: "http://localhost:8080"
+      # first admin (alternatively: setup dialog on first visit)
+      # PP_ADMIN_USERNAME: admin
+      # PP_ADMIN_PASSWORD: change-me-please
+      # --- SSO via OpenID Connect (optional) ---
+      # PP_OIDC_ISSUER: "https://auth.example.org/application/o/schmortfolio/"
+      # PP_OIDC_CLIENT_ID: "schmortfolio"
+      # PP_OIDC_CLIENT_SECRET: "..."
+      # PP_OIDC_ALLOWED_GROUPS: "portfolio-users"
+      # PP_OIDC_ADMIN_GROUPS: "portfolio-admins"
+      # PP_DISABLE_LOCAL_LOGIN: "true"
