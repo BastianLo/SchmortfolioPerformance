@@ -9,10 +9,10 @@ use serde::Serialize;
 use crate::fx::CurrencyConverter;
 use crate::math::irr;
 use crate::model::{
-    AccountTransactionType as AT, Client, PortfolioTransaction, PortfolioTransactionType as PT, Security,
-    TransactionCommon, UnitType,
+    AccountTransactionType as AT, Client, PortfolioTransaction, PortfolioTransactionType as PT,
+    Security, TransactionCommon, UnitType,
 };
-use crate::money::{convert_amount, inverse_rate, market_value, AMOUNT_FACTOR};
+use crate::money::{AMOUNT_FACTOR, convert_amount, inverse_rate, market_value};
 use crate::snapshot::valuation_price;
 
 /// Sum of units of a kind in the term currency, preferring the forex amount
@@ -34,7 +34,11 @@ pub fn unit_sum_in(t: &TransactionCommon, kind: UnitType, conv: &CurrencyConvert
 }
 
 /// PP: `PortfolioTransaction#getMonetaryAmount(converter)`.
-pub fn monetary_amount_in(t: &PortfolioTransaction, security: &Security, conv: &CurrencyConverter) -> i64 {
+pub fn monetary_amount_in(
+    t: &PortfolioTransaction,
+    security: &Security,
+    conv: &CurrencyConverter,
+) -> i64 {
     if t.currency == conv.term() {
         return t.amount;
     }
@@ -49,7 +53,11 @@ pub fn monetary_amount_in(t: &PortfolioTransaction, security: &Security, conv: &
 }
 
 /// PP: `PortfolioTransaction#getGrossValue(converter)`.
-pub fn gross_value_in(t: &PortfolioTransaction, security: &Security, conv: &CurrencyConverter) -> i64 {
+pub fn gross_value_in(
+    t: &PortfolioTransaction,
+    security: &Security,
+    conv: &CurrencyConverter,
+) -> i64 {
     if t.currency == conv.term() {
         return t.gross_value_amount();
     }
@@ -92,9 +100,19 @@ struct Lot {
 }
 
 enum Item<'a> {
-    Start { owner: String, shares: i64, value: i64 },
-    Portfolio { owner: &'a str, tx: &'a PortfolioTransaction, other_owner: Option<&'a str> },
-    Account { tx: &'a crate::model::AccountTransaction },
+    Start {
+        owner: String,
+        shares: i64,
+        value: i64,
+    },
+    Portfolio {
+        owner: &'a str,
+        tx: &'a PortfolioTransaction,
+        other_owner: Option<&'a str>,
+    },
+    Account {
+        tx: &'a crate::model::AccountTransaction,
+    },
 }
 
 pub struct SecurityPerformance;
@@ -102,23 +120,37 @@ pub struct SecurityPerformance;
 impl SecurityPerformance {
     /// Records for all securities with transactions, for transactions in
     /// `(start, end]`.
-    pub fn calculate(client: &Client, conv: &CurrencyConverter, start: NaiveDate, end: NaiveDate) -> Vec<SecurityRecord> {
+    pub fn calculate(
+        client: &Client,
+        conv: &CurrencyConverter,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Vec<SecurityRecord> {
         let in_iv = |d: NaiveDate| d > start && d <= end;
         let start_dt = start.and_hms_opt(0, 0, 0).unwrap();
 
         // collect items per security
         let mut items: HashMap<&str, Vec<(NaiveDateTime, u8, Item)>> = HashMap::new();
         let mut last_tx: HashMap<&str, &PortfolioTransaction> = HashMap::new();
-        let mut shares_at_start: HashMap<(&str, &str), (i64, Option<&PortfolioTransaction>)> = HashMap::new();
+        let mut shares_at_start: HashMap<(&str, &str), (i64, Option<&PortfolioTransaction>)> =
+            HashMap::new();
         let mut end_shares: HashMap<&str, i64> = HashMap::new();
 
         for p in &client.portfolios {
             for t in &p.transactions {
-                let Some(sid) = t.security.as_deref() else { continue };
+                let Some(sid) = t.security.as_deref() else {
+                    continue;
+                };
                 let d = t.date();
-                let signed = if t.kind.is_purchase() { t.shares } else { -t.shares };
+                let signed = if t.kind.is_purchase() {
+                    t.shares
+                } else {
+                    -t.shares
+                };
                 if d <= start {
-                    let e = shares_at_start.entry((p.id.as_str(), sid)).or_insert((0, None));
+                    let e = shares_at_start
+                        .entry((p.id.as_str(), sid))
+                        .or_insert((0, None));
                     e.0 += signed;
                     e.1 = Some(t);
                 }
@@ -134,7 +166,11 @@ impl SecurityPerformance {
                     items.entry(sid).or_default().push((
                         t.date_time,
                         1,
-                        Item::Portfolio { owner: &p.id, tx: t, other_owner: other },
+                        Item::Portfolio {
+                            owner: &p.id,
+                            tx: t,
+                            other_owner: other,
+                        },
                     ));
                 }
             }
@@ -143,32 +179,57 @@ impl SecurityPerformance {
             if *shares == 0 {
                 continue;
             }
-            let Some(sec) = client.security(sid) else { continue };
+            let Some(sec) = client.security(sid) else {
+                continue;
+            };
             let price = valuation_price(sec, start, *last, conv);
             let value = market_value(*shares, price);
             items.entry(sid).or_default().push((
                 start_dt,
                 0,
-                Item::Start { owner: owner.to_string(), shares: *shares, value },
+                Item::Start {
+                    owner: owner.to_string(),
+                    shares: *shares,
+                    value,
+                },
             ));
         }
         for a in &client.accounts {
             for t in &a.transactions {
-                let Some(sid) = t.security.as_deref() else { continue };
+                let Some(sid) = t.security.as_deref() else {
+                    continue;
+                };
                 if !in_iv(t.date()) {
                     continue;
                 }
-                if matches!(t.kind, AT::Dividends | AT::Fees | AT::FeesRefund | AT::Taxes | AT::TaxRefund) {
-                    items.entry(sid).or_default().push((t.date_time, 2, Item::Account { tx: t }));
+                if matches!(
+                    t.kind,
+                    AT::Dividends | AT::Fees | AT::FeesRefund | AT::Taxes | AT::TaxRefund
+                ) {
+                    items
+                        .entry(sid)
+                        .or_default()
+                        .push((t.date_time, 2, Item::Account { tx: t }));
                 }
             }
         }
 
         let mut out = Vec::new();
         for sec in &client.securities {
-            let Some(mut list) = items.remove(sec.id.as_str()) else { continue };
+            let Some(mut list) = items.remove(sec.id.as_str()) else {
+                continue;
+            };
             list.sort_by_key(|(dt, prio, _)| (*dt, *prio));
-            out.push(Self::record(client, conv, sec, start, end, list, end_shares.get(sec.id.as_str()).copied(), last_tx.get(sec.id.as_str()).copied()));
+            out.push(Self::record(
+                client,
+                conv,
+                sec,
+                start,
+                end,
+                list,
+                end_shares.get(sec.id.as_str()).copied(),
+                last_tx.get(sec.id.as_str()).copied(),
+            ));
         }
         out
     }
@@ -194,16 +255,29 @@ impl SecurityPerformance {
 
         for (_, _, item) in &items {
             match item {
-                Item::Start { owner, shares, value } => {
+                Item::Start {
+                    owner,
+                    shares,
+                    value,
+                } => {
                     let amount = conv.convert_amount(start, &sec_currency, *value);
-                    fifo.push(Lot { owner: owner.clone(), shares: *shares, gross: amount, net: amount });
+                    fifo.push(Lot {
+                        owner: owner.clone(),
+                        shares: *shares,
+                        gross: amount,
+                        net: amount,
+                    });
                     mv_cost += amount;
                     mv_net += amount;
                     held += shares;
                     flows.push((start, -(amount as f64)));
                     inflow += amount;
                 }
-                Item::Portfolio { owner, tx: t, other_owner } => {
+                Item::Portfolio {
+                    owner,
+                    tx: t,
+                    other_owner,
+                } => {
                     let fee = unit_sum_in(t, UnitType::Fee, conv);
                     let tax = unit_sum_in(t, UnitType::Tax, conv);
                     fees += fee;
@@ -218,7 +292,12 @@ impl SecurityPerformance {
                     match t.kind {
                         PT::Buy | PT::DeliveryInbound => {
                             let net = gross_value_in(t, sec, conv);
-                            fifo.push(Lot { owner: owner.to_string(), shares: t.shares, gross: amount, net });
+                            fifo.push(Lot {
+                                owner: owner.to_string(),
+                                shares: t.shares,
+                                gross: amount,
+                                net,
+                            });
                             mv_cost += amount;
                             mv_net += net;
                             held += t.shares;
@@ -233,8 +312,10 @@ impl SecurityPerformance {
                                 mv_net = 0;
                                 held = 0;
                             } else {
-                                mv_cost = (mv_cost as f64 / held as f64 * remaining as f64).round() as i64;
-                                mv_net = (mv_net as f64 / held as f64 * remaining as f64).round() as i64;
+                                mv_cost = (mv_cost as f64 / held as f64 * remaining as f64).round()
+                                    as i64;
+                                mv_net =
+                                    (mv_net as f64 / held as f64 * remaining as f64).round() as i64;
                                 held = remaining;
                             }
                             let sale_gross = gross_value_in(t, sec, conv);
@@ -248,8 +329,10 @@ impl SecurityPerformance {
                                     continue;
                                 }
                                 let n = sold.min(lot.shares);
-                                let g = (n as f64 / lot.shares as f64 * lot.gross as f64).round() as i64;
-                                let nn = (n as f64 / lot.shares as f64 * lot.net as f64).round() as i64;
+                                let g = (n as f64 / lot.shares as f64 * lot.gross as f64).round()
+                                    as i64;
+                                let nn =
+                                    (n as f64 / lot.shares as f64 * lot.net as f64).round() as i64;
                                 lot.gross -= g;
                                 lot.net -= nn;
                                 lot.shares -= n;
@@ -258,7 +341,9 @@ impl SecurityPerformance {
                             }
                             let matched = total_shares - sold.max(0);
                             if total_shares > 0 && matched > 0 {
-                                let proceeds = (sale_gross as f64 * matched as f64 / total_shares as f64).round() as i64;
+                                let proceeds = (sale_gross as f64 * matched as f64
+                                    / total_shares as f64)
+                                    .round() as i64;
                                 realized += proceeds - cost_of_sold;
                             }
                         }
@@ -276,12 +361,22 @@ impl SecurityPerformance {
                                     fifo[i].owner = owner.to_string();
                                 } else {
                                     let lot = &mut fifo[i];
-                                    let g = (n as f64 / lot.shares as f64 * lot.gross as f64).round() as i64;
-                                    let nn = (n as f64 / lot.shares as f64 * lot.net as f64).round() as i64;
+                                    let g = (n as f64 / lot.shares as f64 * lot.gross as f64)
+                                        .round() as i64;
+                                    let nn = (n as f64 / lot.shares as f64 * lot.net as f64).round()
+                                        as i64;
                                     lot.gross -= g;
                                     lot.net -= nn;
                                     lot.shares -= n;
-                                    fifo.insert(i + 1, Lot { owner: owner.to_string(), shares: n, gross: g, net: nn });
+                                    fifo.insert(
+                                        i + 1,
+                                        Lot {
+                                            owner: owner.to_string(),
+                                            shares: n,
+                                            gross: g,
+                                            net: nn,
+                                        },
+                                    );
                                     i += 1;
                                 }
                                 moved -= n;
@@ -356,7 +451,11 @@ impl SecurityPerformance {
             dividends,
             realized_gains: realized,
             unrealized_gains: unrealized,
-            unrealized_gains_percent: if fifo_cost != 0 { unrealized as f64 / fifo_cost as f64 } else { 0.0 },
+            unrealized_gains_percent: if fifo_cost != 0 {
+                unrealized as f64 / fifo_cost as f64
+            } else {
+                0.0
+            },
             delta: market_value_conv + outflow - inflow,
             irr: irr_value,
         }
@@ -377,7 +476,12 @@ pub struct EarningEntry {
     pub fees: i64,
 }
 
-pub fn earnings(client: &Client, conv: &CurrencyConverter, start: NaiveDate, end: NaiveDate) -> Vec<EarningEntry> {
+pub fn earnings(
+    client: &Client,
+    conv: &CurrencyConverter,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<EarningEntry> {
     let mut out = Vec::new();
     for a in &client.accounts {
         for t in &a.transactions {

@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use pp_core::model::Client;
-use pp_import::{read_client, FileFormat, ImportError};
+use pp_import::{FileFormat, ImportError, read_client};
 
 fn testdata(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/pp").join(rel)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/pp")
+        .join(rel)
 }
 
 fn load(rel: &str, pwd: Option<&str>) -> pp_import::ImportResult {
@@ -16,27 +18,83 @@ fn load(rel: &str, pwd: Option<&str>) -> pp_import::ImportResult {
 /// formats.
 fn fingerprint(c: &Client) -> String {
     let mut out = String::new();
-    out += &format!("base={} sec={} acc={} pf={} tax={}\n", c.base_currency, c.securities.len(), c.accounts.len(), c.portfolios.len(), c.taxonomies.len());
-    let mut secs: Vec<_> = c.securities.iter().map(|s| format!("{} {} prices={} latest={:?}", s.id, s.name, s.prices.len(), s.latest.as_ref().map(|l| l.value))).collect();
+    out += &format!(
+        "base={} sec={} acc={} pf={} tax={}\n",
+        c.base_currency,
+        c.securities.len(),
+        c.accounts.len(),
+        c.portfolios.len(),
+        c.taxonomies.len()
+    );
+    let mut secs: Vec<_> = c
+        .securities
+        .iter()
+        .map(|s| {
+            format!(
+                "{} {} prices={} latest={:?}",
+                s.id,
+                s.name,
+                s.prices.len(),
+                s.latest.as_ref().map(|l| l.value)
+            )
+        })
+        .collect();
     secs.sort();
     out += &secs.join("\n");
     for a in &c.accounts {
         let mut txs: Vec<_> = a
             .transactions
             .iter()
-            .map(|t| format!("{} {:?} {} {} {} sh={} sec={:?} units={}", t.id, t.kind, t.date_time, t.currency, t.amount, t.shares, t.security, t.units.len()))
+            .map(|t| {
+                format!(
+                    "{} {:?} {} {} {} sh={} sec={:?} units={}",
+                    t.id,
+                    t.kind,
+                    t.date_time,
+                    t.currency,
+                    t.amount,
+                    t.shares,
+                    t.security,
+                    t.units.len()
+                )
+            })
             .collect();
         txs.sort();
-        out += &format!("\nACC {} {} {}\n{}", a.id, a.name, a.currency, txs.join("\n"));
+        out += &format!(
+            "\nACC {} {} {}\n{}",
+            a.id,
+            a.name,
+            a.currency,
+            txs.join("\n")
+        );
     }
     for p in &c.portfolios {
         let mut txs: Vec<_> = p
             .transactions
             .iter()
-            .map(|t| format!("{} {:?} {} {} {} sh={} sec={:?} units={} cross={:?}", t.id, t.kind, t.date_time, t.currency, t.amount, t.shares, t.security, t.units.len(), t.cross_entry.as_ref().map(|c| &c.other_transaction)))
+            .map(|t| {
+                format!(
+                    "{} {:?} {} {} {} sh={} sec={:?} units={} cross={:?}",
+                    t.id,
+                    t.kind,
+                    t.date_time,
+                    t.currency,
+                    t.amount,
+                    t.shares,
+                    t.security,
+                    t.units.len(),
+                    t.cross_entry.as_ref().map(|c| &c.other_transaction)
+                )
+            })
             .collect();
         txs.sort();
-        out += &format!("\nPF {} {} ref={:?}\n{}", p.id, p.name, p.reference_account, txs.join("\n"));
+        out += &format!(
+            "\nPF {} {} ref={:?}\n{}",
+            p.id,
+            p.name,
+            p.reference_account,
+            txs.join("\n")
+        );
     }
     out
 }
@@ -48,17 +106,30 @@ fn reads_all_historic_file_versions_identically() {
         assert_eq!(xml.info.format, FileFormat::Xml);
         let bin = load(&format!("fileversions/{v}.binary.portfolio"), None);
         assert_eq!(bin.info.format, FileFormat::Binary);
-        let bin_pwd = load(&format!("fileversions/{v}.binary+pwd.portfolio"), Some("123456"));
+        let bin_pwd = load(
+            &format!("fileversions/{v}.binary+pwd.portfolio"),
+            Some("123456"),
+        );
         assert!(bin_pwd.info.encrypted);
 
         let f = fingerprint(&xml.client);
-        assert!(!xml.client.accounts.is_empty() || !xml.client.securities.is_empty(), "{v} empty");
+        assert!(
+            !xml.client.accounts.is_empty() || !xml.client.securities.is_empty(),
+            "{v} empty"
+        );
         assert_eq!(f, fingerprint(&bin.client), "{v}: xml vs binary");
-        assert_eq!(f, fingerprint(&bin_pwd.client), "{v}: xml vs encrypted binary");
+        assert_eq!(
+            f,
+            fingerprint(&bin_pwd.client),
+            "{v}: xml vs encrypted binary"
+        );
 
         let xml_pwd = testdata(&format!("fileversions/{v}.xml+pwd.portfolio"));
         if xml_pwd.exists() {
-            let r = load(&format!("fileversions/{v}.xml+pwd.portfolio"), Some("123456"));
+            let r = load(
+                &format!("fileversions/{v}.xml+pwd.portfolio"),
+                Some("123456"),
+            );
             assert_eq!(f, fingerprint(&r.client), "{v}: xml vs encrypted xml");
         }
     }
@@ -67,8 +138,14 @@ fn reads_all_historic_file_versions_identically() {
 #[test]
 fn encrypted_requires_correct_password() {
     let bytes = std::fs::read(testdata("fileversions/client69.binary+pwd.portfolio")).unwrap();
-    assert!(matches!(read_client(&bytes, None), Err(ImportError::PasswordRequired)));
-    assert!(matches!(read_client(&bytes, Some("wrong")), Err(ImportError::WrongPassword)));
+    assert!(matches!(
+        read_client(&bytes, None),
+        Err(ImportError::PasswordRequired)
+    ));
+    assert!(matches!(
+        read_client(&bytes, Some("wrong")),
+        Err(ImportError::WrongPassword)
+    ));
 }
 
 #[test]
@@ -89,13 +166,22 @@ fn reads_all_scenario_and_issue_files() {
             let path = entry.unwrap().path();
             let rel = format!("{dir}/{}", path.file_name().unwrap().to_string_lossy());
             let r = load(&rel, None);
-            assert!(r.info.warnings.iter().all(|w| !w.contains("Unaufgelöste")), "{rel}: {:?}", r.info.warnings);
+            assert!(
+                r.info.warnings.iter().all(|w| !w.contains("Unaufgelöste")),
+                "{rel}: {:?}",
+                r.info.warnings
+            );
             // cross entries must point to existing transactions
             for p in &r.client.portfolios {
                 for t in &p.transactions {
                     if let Some(ce) = &t.cross_entry {
-                        let found = r.client.accounts.iter().any(|a| a.id == ce.other_owner && a.transactions.iter().any(|x| x.id == ce.other_transaction))
-                            || r.client.portfolios.iter().any(|a| a.id == ce.other_owner && a.transactions.iter().any(|x| x.id == ce.other_transaction));
+                        let found = r.client.accounts.iter().any(|a| {
+                            a.id == ce.other_owner
+                                && a.transactions.iter().any(|x| x.id == ce.other_transaction)
+                        }) || r.client.portfolios.iter().any(|a| {
+                            a.id == ce.other_owner
+                                && a.transactions.iter().any(|x| x.id == ce.other_transaction)
+                        });
                         assert!(found, "{rel}: dangling cross entry {}", t.id);
                     }
                 }

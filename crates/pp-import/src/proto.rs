@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
-use pp_core::model::*;
 use pp_core::Money;
+use pp_core::model::*;
 use prost::Message;
 use rust_decimal::Decimal;
 
@@ -22,7 +22,9 @@ fn epoch_day(d: i64) -> NaiveDate {
 }
 
 fn ts(t: &Option<prost_types::Timestamp>) -> Option<NaiveDateTime> {
-    t.as_ref().and_then(|t| DateTime::from_timestamp(t.seconds, t.nanos.max(0) as u32)).map(|d| d.naive_utc())
+    t.as_ref()
+        .and_then(|t| DateTime::from_timestamp(t.seconds, t.nanos.max(0) as u32))
+        .map(|d| d.naive_utc())
 }
 
 fn ts_string(t: &Option<prost_types::Timestamp>) -> Option<String> {
@@ -40,7 +42,9 @@ fn decimal(v: &pb::PDecimalValue) -> Option<Decimal> {
     for b in &v.value {
         n = n.checked_shl(8)? | (*b as i128);
     }
-    Decimal::try_from_i128_with_scale(n, v.scale).ok().map(|d| d.normalize())
+    Decimal::try_from_i128_with_scale(n, v.scale)
+        .ok()
+        .map(|d| d.normalize())
 }
 
 fn any_to_json(v: &pb::PAnyValue) -> serde_json::Value {
@@ -49,7 +53,9 @@ fn any_to_json(v: &pb::PAnyValue) -> serde_json::Value {
         Some(Kind::String(s)) => s.clone().into(),
         Some(Kind::Int32(i)) => (*i).into(),
         Some(Kind::Int64(i)) => (*i).into(),
-        Some(Kind::Double(d)) => serde_json::Number::from_f64(*d).map(serde_json::Value::Number).unwrap_or_default(),
+        Some(Kind::Double(d)) => serde_json::Number::from_f64(*d)
+            .map(serde_json::Value::Number)
+            .unwrap_or_default(),
         Some(Kind::Bool(b)) => (*b).into(),
         Some(Kind::Map(m)) => kv_to_json(&m.entries),
         Some(Kind::Null(_)) | None => serde_json::Value::Null,
@@ -58,12 +64,20 @@ fn any_to_json(v: &pb::PAnyValue) -> serde_json::Value {
 
 fn kv_to_json(kv: &[pb::PKeyValue]) -> serde_json::Value {
     serde_json::Value::Object(
-        kv.iter().map(|e| (e.key.clone(), e.value.as_ref().map(any_to_json).unwrap_or_default())).collect(),
+        kv.iter()
+            .map(|e| {
+                (
+                    e.key.clone(),
+                    e.value.as_ref().map(any_to_json).unwrap_or_default(),
+                )
+            })
+            .collect(),
     )
 }
 
 pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), ImportError> {
-    let pc = pb::PClient::decode(bytes).map_err(|e| ImportError::Format(format!("Protobuf ungültig: {e}")))?;
+    let pc = pb::PClient::decode(bytes)
+        .map_err(|e| ImportError::Format(format!("Protobuf ungültig: {e}")))?;
     let mut warnings = Vec::new();
 
     let securities: Vec<Security> = pc
@@ -85,7 +99,14 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
             latest_feed_url: s.latest_feed_url.clone(),
             note: s.note.clone(),
             retired: s.is_retired,
-            prices: s.prices.iter().map(|p| SecurityPrice { date: epoch_day(p.date), value: p.close }).collect(),
+            prices: s
+                .prices
+                .iter()
+                .map(|p| SecurityPrice {
+                    date: epoch_day(p.date),
+                    value: p.close,
+                })
+                .collect(),
             latest: s.latest.as_ref().map(|l| LatestSecurityPrice {
                 date: epoch_day(l.date),
                 value: l.close,
@@ -100,7 +121,9 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     kind: match e.r#type() {
                         pb::p_security_event::Type::StockSplit => SecurityEventKind::StockSplit,
                         pb::p_security_event::Type::Note => SecurityEventKind::Note,
-                        pb::p_security_event::Type::DividendPayment => SecurityEventKind::DividendPayment,
+                        pb::p_security_event::Type::DividendPayment => {
+                            SecurityEventKind::DividendPayment
+                        }
                     },
                     date: epoch_day(e.date),
                     details: Some(e.details.clone()).filter(|d| !d.is_empty()),
@@ -140,8 +163,16 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
             updated_at: ts_string(&p.updated_at),
         })
         .collect();
-    let acc_idx: HashMap<String, usize> = accounts.iter().enumerate().map(|(i, a)| (a.id.clone(), i)).collect();
-    let pf_idx: HashMap<String, usize> = portfolios.iter().enumerate().map(|(i, p)| (p.id.clone(), i)).collect();
+    let acc_idx: HashMap<String, usize> = accounts
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (a.id.clone(), i))
+        .collect();
+    let pf_idx: HashMap<String, usize> = portfolios
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.id.clone(), i))
+        .collect();
 
     for t in &pc.transactions {
         let Some(date_time) = ts(&t.date) else {
@@ -158,11 +189,16 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     pb::p_transaction_unit::Type::Fee => UnitType::Fee,
                 },
                 amount: Money::new(u.currency_code.clone(), u.amount),
-                forex: u.fx_amount.map(|a| Money::new(u.fx_currency_code.clone().unwrap_or_default(), a)),
+                forex: u
+                    .fx_amount
+                    .map(|a| Money::new(u.fx_currency_code.clone().unwrap_or_default(), a)),
                 exchange_rate: u.fx_rate_to_base.as_ref().and_then(decimal),
             })
             .collect();
-        let common = |id: &str, units: Vec<TransactionUnit>, cross: Option<CrossEntry>, updated: &Option<prost_types::Timestamp>| {
+        let common = |id: &str,
+                      units: Vec<TransactionUnit>,
+                      cross: Option<CrossEntry>,
+                      updated: &Option<prost_types::Timestamp>| {
             TransactionCommon {
                 id: id.to_string(),
                 date_time,
@@ -179,7 +215,10 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
         };
         let account = t.account.as_ref().and_then(|a| acc_idx.get(a).copied());
         let portfolio = t.portfolio.as_ref().and_then(|p| pf_idx.get(p).copied());
-        let other_uuid = t.other_uuid.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let other_uuid = t
+            .other_uuid
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let simple_account = |kind: AccountTransactionType| -> Option<(usize, AccountTransaction)> {
             Some((
@@ -203,7 +242,11 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                 };
                 let buy = t.r#type() == TT::Purchase;
                 let ptx = PortfolioTransaction {
-                    kind: if buy { PortfolioTransactionType::Buy } else { PortfolioTransactionType::Sell },
+                    kind: if buy {
+                        PortfolioTransactionType::Buy
+                    } else {
+                        PortfolioTransactionType::Sell
+                    },
                     common: common(
                         &t.uuid,
                         units.clone(),
@@ -227,14 +270,21 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                 );
                 atx_common.shares = 0;
                 accounts[ai].transactions.push(AccountTransaction {
-                    kind: if buy { AccountTransactionType::Buy } else { AccountTransactionType::Sell },
+                    kind: if buy {
+                        AccountTransactionType::Buy
+                    } else {
+                        AccountTransactionType::Sell
+                    },
                     common: atx_common,
                     ex_date: None,
                 });
                 portfolios[pi].transactions.push(ptx);
             }
             TT::SecurityTransfer => {
-                let target = t.other_portfolio.as_ref().and_then(|p| pf_idx.get(p).copied());
+                let target = t
+                    .other_portfolio
+                    .as_ref()
+                    .and_then(|p| pf_idx.get(p).copied());
                 let (Some(si), Some(ti)) = (portfolio, target) else {
                     warnings.push(format!("Depotwechsel {} unvollständig", t.uuid));
                     continue;
@@ -246,7 +296,11 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     common: common(
                         &t.uuid,
                         units.clone(),
-                        Some(CrossEntry { kind: CrossEntryKind::PortfolioTransfer, other_owner: tgt_id, other_transaction: other_uuid.clone() }),
+                        Some(CrossEntry {
+                            kind: CrossEntryKind::PortfolioTransfer,
+                            other_owner: tgt_id,
+                            other_transaction: other_uuid.clone(),
+                        }),
                         &t.updated_at,
                     ),
                 });
@@ -255,13 +309,20 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     common: common(
                         &other_uuid,
                         vec![],
-                        Some(CrossEntry { kind: CrossEntryKind::PortfolioTransfer, other_owner: src_id, other_transaction: t.uuid.clone() }),
+                        Some(CrossEntry {
+                            kind: CrossEntryKind::PortfolioTransfer,
+                            other_owner: src_id,
+                            other_transaction: t.uuid.clone(),
+                        }),
                         &t.other_updated_at,
                     ),
                 });
             }
             TT::CashTransfer => {
-                let target = t.other_account.as_ref().and_then(|a| acc_idx.get(a).copied());
+                let target = t
+                    .other_account
+                    .as_ref()
+                    .and_then(|a| acc_idx.get(a).copied());
                 let (Some(si), Some(ti)) = (account, target) else {
                     warnings.push(format!("Umbuchung {} unvollständig", t.uuid));
                     continue;
@@ -271,10 +332,18 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                 let mut target_common = common(
                     &other_uuid,
                     vec![],
-                    Some(CrossEntry { kind: CrossEntryKind::AccountTransfer, other_owner: src_id, other_transaction: t.uuid.clone() }),
+                    Some(CrossEntry {
+                        kind: CrossEntryKind::AccountTransfer,
+                        other_owner: src_id,
+                        other_transaction: t.uuid.clone(),
+                    }),
                     &t.other_updated_at,
                 );
-                if let Some(fx) = units.iter().find(|u| u.kind == UnitType::GrossValue).and_then(|u| u.forex.clone()) {
+                if let Some(fx) = units
+                    .iter()
+                    .find(|u| u.kind == UnitType::GrossValue)
+                    .and_then(|u| u.forex.clone())
+                {
                     target_common.amount = fx.amount;
                     target_common.currency = fx.currency;
                 }
@@ -283,7 +352,11 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     common: common(
                         &t.uuid,
                         units.clone(),
-                        Some(CrossEntry { kind: CrossEntryKind::AccountTransfer, other_owner: tgt_id, other_transaction: other_uuid.clone() }),
+                        Some(CrossEntry {
+                            kind: CrossEntryKind::AccountTransfer,
+                            other_owner: tgt_id,
+                            other_transaction: other_uuid.clone(),
+                        }),
                         &t.updated_at,
                     ),
                     ex_date: None,
@@ -355,7 +428,11 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
                     assignments: c
                         .assignments
                         .iter()
-                        .map(|a| Assignment { vehicle: a.investment_vehicle.clone(), weight: a.weight, rank: a.rank })
+                        .map(|a| Assignment {
+                            vehicle: a.investment_vehicle.clone(),
+                            weight: a.weight,
+                            rank: a.rank,
+                        })
                         .collect(),
                     data: kv_to_json(&c.data),
                 })
@@ -363,12 +440,22 @@ pub(crate) fn read_protobuf(bytes: &[u8]) -> Result<(Client, Vec<String>), Impor
         })
         .collect();
 
-    let watchlists =
-        pc.watchlists.iter().map(|w| Watchlist { name: w.name.clone(), securities: w.securities.clone() }).collect();
+    let watchlists = pc
+        .watchlists
+        .iter()
+        .map(|w| Watchlist {
+            name: w.name.clone(),
+            securities: w.securities.clone(),
+        })
+        .collect();
 
     let client = Client {
         version: pc.version,
-        base_currency: if pc.base_currency.is_empty() { "EUR".into() } else { pc.base_currency.clone() },
+        base_currency: if pc.base_currency.is_empty() {
+            "EUR".into()
+        } else {
+            pc.base_currency.clone()
+        },
         securities,
         accounts,
         portfolios,

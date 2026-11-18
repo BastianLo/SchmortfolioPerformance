@@ -27,3 +27,6 @@ zip = { version = "9.7.0", default-features = false, features = ["deflate"] }
 [build-dependencies]
 prost-build = "0.14.6"
 protox = "0.10.0"
+
+[lints]
+workspace = true

@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::money::{convert_amount, inverse_rate, Money};
+use crate::money::{Money, convert_amount, inverse_rate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangeRateSeries {
@@ -19,7 +19,11 @@ pub struct ExchangeRateSeries {
 
 impl ExchangeRateSeries {
     pub fn new(base: impl Into<String>, term: impl Into<String>) -> Self {
-        Self { base: base.into(), term: term.into(), rates: Vec::new() }
+        Self {
+            base: base.into(),
+            term: term.into(),
+            rates: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, date: NaiveDate, rate: Decimal) {
@@ -42,6 +46,8 @@ impl ExchangeRateSeries {
     }
 }
 
+type PathCache = RwLock<HashMap<(String, String), Option<Vec<Step>>>>;
+
 #[derive(Debug, Clone, Copy)]
 enum Step {
     Direct(usize),
@@ -53,12 +59,15 @@ enum Step {
 #[derive(Debug, Default)]
 pub struct ExchangeRateProvider {
     series: Vec<ExchangeRateSeries>,
-    paths: RwLock<HashMap<(String, String), Option<Vec<Step>>>>,
+    paths: PathCache,
 }
 
 impl ExchangeRateProvider {
     pub fn new(series: Vec<ExchangeRateSeries>) -> Self {
-        Self { series, paths: RwLock::new(HashMap::new()) }
+        Self {
+            series,
+            paths: RwLock::new(HashMap::new()),
+        }
     }
 
     pub fn series(&self) -> &[ExchangeRateSeries] {
@@ -131,7 +140,11 @@ pub struct CurrencyConverter {
 
 impl CurrencyConverter {
     pub fn new(provider: Arc<ExchangeRateProvider>, term: impl Into<String>) -> Self {
-        Self { provider, term: term.into(), missing: Default::default() }
+        Self {
+            provider,
+            term: term.into(),
+            missing: Default::default(),
+        }
     }
 
     pub fn term(&self) -> &str {
@@ -139,7 +152,11 @@ impl CurrencyConverter {
     }
 
     pub fn with(&self, term: &str) -> Self {
-        Self { provider: self.provider.clone(), term: term.to_string(), missing: self.missing.clone() }
+        Self {
+            provider: self.provider.clone(),
+            term: term.to_string(),
+            missing: self.missing.clone(),
+        }
     }
 
     /// Rate from `currency` to the term currency; falls back to 1 (as PP does)
@@ -151,7 +168,10 @@ impl CurrencyConverter {
         match self.provider.rate(date, currency, &self.term) {
             Some(r) => r,
             None => {
-                self.missing.write().unwrap().insert(format!("{currency}/{}", self.term));
+                self.missing
+                    .write()
+                    .unwrap()
+                    .insert(format!("{currency}/{}", self.term));
                 Decimal::ONE
             }
         }
@@ -165,7 +185,10 @@ impl CurrencyConverter {
     }
 
     pub fn convert(&self, date: NaiveDate, money: &Money) -> Money {
-        Money::new(self.term.clone(), self.convert_amount(date, &money.currency, money.amount))
+        Money::new(
+            self.term.clone(),
+            self.convert_amount(date, &money.currency, money.amount),
+        )
     }
 
     /// Currency pairs for which no exchange rate was found so far.
@@ -193,7 +216,10 @@ mod tests {
         chf.add(d("2015-01-16"), Decimal::from_str("1.0128").unwrap());
         let p = Arc::new(ExchangeRateProvider::new(vec![usd, chf]));
         let c = CurrencyConverter::new(p.clone(), "EUR");
-        assert_eq!(c.convert_amount(d("2015-01-16"), "USD", 100_000), (100_000f64 / 1.1588).round() as i64);
+        assert_eq!(
+            c.convert_amount(d("2015-01-16"), "USD", 100_000),
+            (100_000f64 / 1.1588).round() as i64
+        );
         // chained USD -> EUR -> CHF
         let r = p.rate(d("2015-01-20"), "USD", "CHF").unwrap();
         assert!((r.to_string().parse::<f64>().unwrap() - 1.0128 / 1.1588).abs() < 1e-8);

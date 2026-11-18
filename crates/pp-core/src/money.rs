@@ -22,7 +22,10 @@ pub struct Money {
 
 impl Money {
     pub fn new(currency: impl Into<String>, amount: i64) -> Self {
-        Self { currency: currency.into(), amount }
+        Self {
+            currency: currency.into(),
+            amount,
+        }
     }
 
     pub fn zero(currency: impl Into<String>) -> Self {
@@ -81,7 +84,8 @@ pub fn convert_amount(amount: i64, rate: Decimal) -> i64 {
     if amount == 0 {
         return 0;
     }
-    let v = (rate * Decimal::from(amount)).round_dp_with_strategy(0, RoundingStrategy::MidpointTowardZero);
+    let v = (rate * Decimal::from(amount))
+        .round_dp_with_strategy(0, RoundingStrategy::MidpointTowardZero);
     i64::try_from(v.mantissa() / 10i128.pow(v.scale())).unwrap_or(0)
 }
 
@@ -124,7 +128,10 @@ mod tests {
     #[test]
     fn market_value_simple() {
         // 10 shares at 100.00 => 1000.00
-        assert_eq!(market_value(10 * SHARES_FACTOR, 100 * QUOTE_FACTOR), 100_000);
+        assert_eq!(
+            market_value(10 * SHARES_FACTOR, 100 * QUOTE_FACTOR),
+            100_000
+        );
         // 1.5 shares at 33.333 => 49.9995 -> 50.00
         assert_eq!(market_value(150_000_000, 3_333_300_000), 5000);
     }

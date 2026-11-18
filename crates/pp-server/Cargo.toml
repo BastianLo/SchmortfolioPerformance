@@ -7,3 +7,39 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
+argon2 = "0.5"
+axum = { version = "0.8.9", features = ["multipart", "macros"] }
+axum-extra = { version = "0.12.6", features = ["cookie"] }
+base64 = "0.22"
+chrono = { version = "0.4.45", features = ["serde"] }
+openidconnect = { version = "4.1.0", default-features = false, features = ["reqwest", "rustls-tls"] }
+pp-core = { version = "0.1.0", path = "../pp-core" }
+pp-db = { version = "0.1.0", path = "../pp-db" }
+pp-import = { version = "0.1.0", path = "../pp-import" }
+pp-quotes = { version = "0.1.0", path = "../pp-quotes" }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rust-embed = { version = "8.14.0", features = ["mime-guess"] }
+rust_decimal = "1.43.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+thiserror = "2.0.21"
+time = "0.3"
+tokio = { version = "1.54.1", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "compression-gzip", "compression-br", "set-header", "limit"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+url = "2.5.8"
+utoipa = { version = "5", features = ["axum_extras", "chrono"] }
+utoipa-axum = "0.2"
+utoipa-scalar = { version = "0.3", features = ["axum"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

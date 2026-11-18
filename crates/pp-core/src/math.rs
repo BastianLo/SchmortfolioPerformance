@@ -4,7 +4,10 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde::Serialize;
 
 fn npv(days: &[f64], values: &[f64], rate: f64) -> f64 {
-    days.iter().zip(values).map(|(d, v)| v / rate.powf(d / 365.0)).sum()
+    days.iter()
+        .zip(values)
+        .map(|(d, v)| v / rate.powf(d / 365.0))
+        .sum()
 }
 
 fn halving(days: &[f64], values: &[f64], left: f64, right: f64, f_left: f64, f_right: f64) -> f64 {
@@ -35,7 +38,10 @@ pub fn irr(dates: &[NaiveDate], values: &[f64]) -> f64 {
         return f64::NAN;
     }
     let first = dates[0];
-    let days: Vec<f64> = dates.iter().map(|d| (*d - first).num_days() as f64).collect();
+    let days: Vec<f64> = dates
+        .iter()
+        .map(|d| (*d - first).num_days() as f64)
+        .collect();
 
     let f_left = *values.last().unwrap();
     let f_right: f64 = values.iter().sum();
@@ -105,15 +111,30 @@ impl Drawdown {
         let mut last_peak = dates[start_at];
         let mut last_bottom = dates[start_at];
         let mut max_dd = 0.0;
-        let mut interval_max_dd = DateInterval { start: last_peak, end: last_peak };
-        let mut max_dd_duration = DateInterval { start: last_peak, end: last_peak };
-        let mut recovery = DateInterval { start: last_bottom, end: last_peak };
+        let mut interval_max_dd = DateInterval {
+            start: last_peak,
+            end: last_peak,
+        };
+        let mut max_dd_duration = DateInterval {
+            start: last_peak,
+            end: last_peak,
+        };
+        let mut recovery = DateInterval {
+            start: last_bottom,
+            end: last_peak,
+        };
         let mut current_recovery = None;
 
         for ii in start_at..n {
             let value = accumulated[ii] + 1.0;
-            let current_dd = DateInterval { start: last_peak, end: dates[ii] };
-            let cr = DateInterval { start: last_bottom, end: dates[ii] };
+            let current_dd = DateInterval {
+                start: last_peak,
+                end: dates[ii],
+            };
+            let cr = DateInterval {
+                start: last_bottom,
+                end: dates[ii],
+            };
 
             if value > peak {
                 peak = value;
@@ -129,7 +150,10 @@ impl Drawdown {
                 series[ii] = -dd;
                 if dd > max_dd {
                     max_dd = dd;
-                    interval_max_dd = DateInterval { start: last_peak, end: dates[ii] };
+                    interval_max_dd = DateInterval {
+                        start: last_peak,
+                        end: dates[ii],
+                    };
                 }
                 if value < bottom {
                     bottom = value;
@@ -166,10 +190,18 @@ pub struct Volatility {
 
 impl Volatility {
     pub fn new(returns: &[f64], filter: impl Fn(usize) -> bool) -> Self {
-        let selected: Vec<f64> = (0..returns.len()).filter(|i| filter(*i)).map(|i| (1.0 + returns[i]).ln()).collect();
+        let selected: Vec<f64> = (0..returns.len())
+            .filter(|i| filter(*i))
+            .map(|i| (1.0 + returns[i]).ln())
+            .collect();
         let count = selected.len();
         if count <= 1 {
-            return Self { standard_deviation: 0.0, semi_deviation: 0.0, annualized_standard_deviation: 0.0, count };
+            return Self {
+                standard_deviation: 0.0,
+                semi_deviation: 0.0,
+                annualized_standard_deviation: 0.0,
+                count,
+            };
         }
         let avg = selected.iter().sum::<f64>() / count as f64;
         let mut std = 0.0;
@@ -239,7 +271,10 @@ mod tests {
 
     #[test]
     fn easter() {
-        assert_eq!(easter_sunday(2024), NaiveDate::from_ymd_opt(2024, 3, 31).unwrap());
+        assert_eq!(
+            easter_sunday(2024),
+            NaiveDate::from_ymd_opt(2024, 3, 31).unwrap()
+        );
         assert!(is_holiday(NaiveDate::from_ymd_opt(2024, 3, 29).unwrap()));
     }
 }

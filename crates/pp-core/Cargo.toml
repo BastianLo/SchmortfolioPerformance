@@ -16,3 +16,6 @@ uuid = { version = "1.26.1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 approx = "0.5.1"
+
+[lints]
+workspace = true

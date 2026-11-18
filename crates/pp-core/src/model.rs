@@ -126,7 +126,10 @@ impl Security {
                 Some(lh) => date >= latest.date && latest.date >= lh.date,
             };
             if use_latest {
-                return SecurityPrice { date: latest.date, value: latest.value };
+                return SecurityPrice {
+                    date: latest.date,
+                    value: latest.value,
+                };
             }
         }
 
@@ -191,7 +194,10 @@ pub enum AccountTransactionType {
 impl AccountTransactionType {
     pub fn is_credit(self) -> bool {
         use AccountTransactionType::*;
-        matches!(self, Deposit | Interest | Dividends | FeesRefund | TaxRefund | Sell | TransferIn)
+        matches!(
+            self,
+            Deposit | Interest | Dividends | FeesRefund | TaxRefund | Sell | TransferIn
+        )
     }
 
     pub fn as_str(self) -> &'static str {
@@ -372,7 +378,11 @@ impl TransactionCommon {
     }
 
     pub fn unit_sum(&self, kind: UnitType) -> i64 {
-        self.units.iter().filter(|u| u.kind == kind).map(|u| u.amount.amount).sum()
+        self.units
+            .iter()
+            .filter(|u| u.kind == kind)
+            .map(|u| u.amount.amount)
+            .sum()
     }
 
     pub fn unit(&self, kind: UnitType) -> Option<&TransactionUnit> {
@@ -413,7 +423,11 @@ impl PortfolioTransaction {
     /// Value without fees and taxes (PP: `getGrossValueAmount`).
     pub fn gross_value_amount(&self) -> i64 {
         let tf = self.unit_sum(UnitType::Fee) + self.unit_sum(UnitType::Tax);
-        if self.kind.is_purchase() { self.amount - tf } else { self.amount + tf }
+        if self.kind.is_purchase() {
+            self.amount - tf
+        } else {
+            self.amount + tf
+        }
     }
 }
 

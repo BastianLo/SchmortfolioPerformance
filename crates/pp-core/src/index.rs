@@ -4,8 +4,10 @@ use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
 use crate::fx::CurrencyConverter;
-use crate::math::{is_holiday, Drawdown, Volatility};
-use crate::model::{AccountTransactionType as AT, Client, PortfolioTransactionType as PT, UnitType};
+use crate::math::{Drawdown, Volatility, is_holiday};
+use crate::model::{
+    AccountTransactionType as AT, Client, PortfolioTransactionType as PT, UnitType,
+};
 use crate::snapshot::ValuationIterator;
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,7 +88,10 @@ impl PerformanceIndex {
                 idx.delta[i] = 0.0;
                 let d = this - inbound + outbound - valuation;
                 if d != 0 {
-                    idx.warnings.push(format!("Wertänderung ohne Bestand am {date}: {:.2}", d as f64 / 100.0));
+                    idx.warnings.push(format!(
+                        "Wertänderung ohne Bestand am {date}: {:.2}",
+                        d as f64 / 100.0
+                    ));
                 }
             } else {
                 idx.delta[i] = (this + outbound) as f64 / (valuation + inbound) as f64 - 1.0;
@@ -99,7 +104,13 @@ impl PerformanceIndex {
         idx
     }
 
-    fn collect_transferals(&mut self, client: &Client, conv: &CurrencyConverter, start: NaiveDate, end: NaiveDate) {
+    fn collect_transferals(
+        &mut self,
+        client: &Client,
+        conv: &CurrencyConverter,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) {
         let add = |arr: &mut Vec<i64>, d: NaiveDate, currency: &str, v: i64| {
             if v == 0 {
                 return;
@@ -108,7 +119,11 @@ impl PerformanceIndex {
             arr[i] += conv.convert_amount(d, currency, v);
         };
         for a in &client.accounts {
-            for t in a.transactions.iter().filter(|t| t.date() >= start && t.date() <= end) {
+            for t in a
+                .transactions
+                .iter()
+                .filter(|t| t.date() >= start && t.date() <= end)
+            {
                 let d = t.date();
                 let c = t.currency.as_str();
                 match t.kind {
@@ -136,7 +151,11 @@ impl PerformanceIndex {
             }
         }
         for p in &client.portfolios {
-            for t in p.transactions.iter().filter(|t| t.date() >= start && t.date() <= end) {
+            for t in p
+                .transactions
+                .iter()
+                .filter(|t| t.date() >= start && t.date() <= end)
+            {
                 let d = t.date();
                 let c = t.currency.as_str();
                 add(&mut self.taxes, d, c, t.unit_sum(UnitType::Tax));
@@ -172,7 +191,11 @@ impl PerformanceIndex {
     }
 
     pub fn drawdown(&self) -> Drawdown {
-        let start_at = self.totals.iter().position(|t| *t != 0).unwrap_or(self.totals.len().saturating_sub(1));
+        let start_at = self
+            .totals
+            .iter()
+            .position(|t| *t != 0)
+            .unwrap_or(self.totals.len().saturating_sub(1));
         Drawdown::new(&self.accumulated, &self.dates, start_at)
     }
 

@@ -24,7 +24,11 @@ pub fn valuation_price(
     }
     let Some(tx) = last_tx else { return 0 };
     let sec_currency = security.currency_or(&tx.currency);
-    let gross = converter.with(sec_currency).convert_amount(tx.date(), &tx.currency, tx.gross_value_amount());
+    let gross = converter.with(sec_currency).convert_amount(
+        tx.date(),
+        &tx.currency,
+        tx.gross_value_amount(),
+    );
     price_per_share(gross, tx.shares)
 }
 
@@ -68,7 +72,13 @@ impl ClientSnapshot {
                     .transactions
                     .iter()
                     .filter(|t| t.date() <= date)
-                    .map(|t| if t.kind.is_credit() { t.amount } else { -t.amount })
+                    .map(|t| {
+                        if t.kind.is_credit() {
+                            t.amount
+                        } else {
+                            -t.amount
+                        }
+                    })
                     .sum();
                 AccountSnapshot {
                     account_id: a.id.clone(),
@@ -84,12 +94,18 @@ impl ClientSnapshot {
             let mut by_sec: HashMap<&str, (i64, &PortfolioTransaction)> = HashMap::new();
             let mut order: Vec<&str> = Vec::new();
             for t in p.transactions.iter().filter(|t| t.date() <= date) {
-                let Some(sid) = t.security.as_deref() else { continue };
+                let Some(sid) = t.security.as_deref() else {
+                    continue;
+                };
                 let e = by_sec.entry(sid).or_insert_with(|| {
                     order.push(sid);
                     (0, t)
                 });
-                e.0 += if t.kind.is_purchase() { t.shares } else { -t.shares };
+                e.0 += if t.kind.is_purchase() {
+                    t.shares
+                } else {
+                    -t.shares
+                };
                 e.1 = t;
             }
             for sid in order {
@@ -97,7 +113,9 @@ impl ClientSnapshot {
                 if shares == 0 {
                     continue;
                 }
-                let Some(sec) = client.security(sid) else { continue };
+                let Some(sec) = client.security(sid) else {
+                    continue;
+                };
                 let currency = sec.currency_or(&client.base_currency).to_string();
                 let price = valuation_price(sec, date, Some(last), converter);
                 let value = market_value(shares, price);
@@ -115,7 +133,13 @@ impl ClientSnapshot {
         }
 
         let joint = merge_positions(&positions, converter, date);
-        Self { date, currency: converter.term().to_string(), accounts, positions, joint }
+        Self {
+            date,
+            currency: converter.term().to_string(),
+            accounts,
+            positions,
+            joint,
+        }
     }
 
     pub fn total_cash(&self) -> i64 {
@@ -139,7 +163,11 @@ impl ClientSnapshot {
     }
 }
 
-fn merge_positions(positions: &[PositionSnapshot], converter: &CurrencyConverter, date: NaiveDate) -> Vec<PositionSnapshot> {
+fn merge_positions(
+    positions: &[PositionSnapshot],
+    converter: &CurrencyConverter,
+    date: NaiveDate,
+) -> Vec<PositionSnapshot> {
     let mut map: HashMap<&str, PositionSnapshot> = HashMap::new();
     let mut order = Vec::new();
     for p in positions {
@@ -190,13 +218,26 @@ impl<'a> ValuationIterator<'a> {
                 let mut v: Vec<_> = a
                     .transactions
                     .iter()
-                    .map(|t| (t.date(), if t.kind.is_credit() { t.amount } else { -t.amount }))
+                    .map(|t| {
+                        (
+                            t.date(),
+                            if t.kind.is_credit() {
+                                t.amount
+                            } else {
+                                -t.amount
+                            },
+                        )
+                    })
                     .collect();
                 v.sort_by_key(|x| x.0);
                 (i, v)
             })
             .collect();
-        let mut portfolio_tx: Vec<_> = client.portfolios.iter().flat_map(|p| p.transactions.iter()).collect();
+        let mut portfolio_tx: Vec<_> = client
+            .portfolios
+            .iter()
+            .flat_map(|p| p.transactions.iter())
+            .collect();
         portfolio_tx.sort_by_key(|t| t.date_time);
         let n = account_tx.len();
         Self {
@@ -226,18 +267,27 @@ impl<'a> ValuationIterator<'a> {
                 break;
             }
             self.portfolio_index += 1;
-            let Some(sid) = t.security.as_deref() else { continue };
+            let Some(sid) = t.security.as_deref() else {
+                continue;
+            };
             let slot = match self.security_slot.get(sid) {
                 Some(s) => *s,
                 None => {
-                    let Some(sec) = self.client.security(sid) else { continue };
+                    let Some(sec) = self.client.security(sid) else {
+                        continue;
+                    };
                     self.securities.push((sec, 0, None));
-                    self.security_slot.insert(&sec.id, self.securities.len() - 1);
+                    self.security_slot
+                        .insert(&sec.id, self.securities.len() - 1);
                     self.securities.len() - 1
                 }
             };
             let e = &mut self.securities[slot];
-            e.1 += if t.kind.is_purchase() { t.shares } else { -t.shares };
+            e.1 += if t.kind.is_purchase() {
+                t.shares
+            } else {
+                -t.shares
+            };
             e.2 = Some(t);
         }
 

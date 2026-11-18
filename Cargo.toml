@@ -16,3 +16,9 @@ strip = true
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[workspace.lints.clippy]
+# amounts are written as `1234_56` (euros_cents) on purpose
+inconsistent_digit_grouping = "allow"
+mistyped_literal_suffixes = "allow"
+too_many_arguments = "allow"

@@ -7,7 +7,9 @@ use serde::Serialize;
 
 use crate::fx::CurrencyConverter;
 use crate::math::irr;
-use crate::model::{AccountTransactionType as AT, Client, PortfolioTransactionType as PT, UnitType};
+use crate::model::{
+    AccountTransactionType as AT, Client, PortfolioTransactionType as PT, UnitType,
+};
 use crate::money::AMOUNT_FACTOR;
 use crate::security::SecurityPerformance;
 use crate::snapshot::ClientSnapshot;
@@ -47,8 +49,15 @@ pub fn client_performance(
     let snap_end = ClientSnapshot::create(client, converter, end);
     let in_iv = |d: NaiveDate| d > start && d <= end;
 
-    let (mut earnings, mut dividends, mut interest, mut fees, mut taxes, mut deposits, mut removals) =
-        (0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
+    let (
+        mut earnings,
+        mut dividends,
+        mut interest,
+        mut fees,
+        mut taxes,
+        mut deposits,
+        mut removals,
+    ) = (0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
 
     let mut cash_flows: Vec<(NaiveDate, f64)> = Vec::new();
 
@@ -133,7 +142,11 @@ pub fn client_performance(
         dates.push(end);
         values.push(final_value as f64 / AMOUNT_FACTOR as f64);
     }
-    let irr_value = if values.is_empty() { 0.0 } else { irr(&dates, &values) };
+    let irr_value = if values.is_empty() {
+        0.0
+    } else {
+        irr(&dates, &values)
+    };
 
     ClientPerformance {
         currency: converter.term().to_string(),

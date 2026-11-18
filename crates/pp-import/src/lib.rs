@@ -50,7 +50,9 @@ pub struct ImportResult {
 const SIG_ENCRYPTED: &[u8] = b"PORTFOLIO";
 const SIG_ZIP: &[u8] = &[0x50, 0x4b, 0x03, 0x04];
 const SIG_BINARY: &[u8] = b"PPPBV1";
-const SALT: [u8; 16] = [112, 67, 103, 107, 164, 131, 144, 161, 159, 142, 117, 200, 203, 187, 231, 228];
+const SALT: [u8; 16] = [
+    112, 67, 103, 107, 164, 131, 144, 161, 159, 142, 117, 200, 203, 187, 231, 228,
+];
 
 pub fn is_encrypted(bytes: &[u8]) -> bool {
     bytes.starts_with(SIG_ENCRYPTED)
@@ -66,7 +68,9 @@ pub fn read_client(bytes: &[u8], password: Option<&str>) -> Result<ImportResult,
 
     if bytes.starts_with(SIG_ENCRYPTED) {
         encrypted = true;
-        let password = password.filter(|p| !p.is_empty()).ok_or(ImportError::PasswordRequired)?;
+        let password = password
+            .filter(|p| !p.is_empty())
+            .ok_or(ImportError::PasswordRequired)?;
         payload = decrypt(bytes, password)?;
         data = &payload;
     }
@@ -77,10 +81,17 @@ pub fn read_client(bytes: &[u8], password: Option<&str>) -> Result<ImportResult,
         compressed = !encrypted;
         let mut archive = zip::ZipArchive::new(Cursor::new(data))
             .map_err(|e| ImportError::Format(format!("ZIP ungültig: {e}")))?;
-        let mut file = archive.by_index(0).map_err(|e| ImportError::Format(format!("ZIP leer: {e}")))?;
-        zip_entry_binary = Some(file.name().map(|n| n.ends_with(".portfolio")).unwrap_or(false));
+        let mut file = archive
+            .by_index(0)
+            .map_err(|e| ImportError::Format(format!("ZIP leer: {e}")))?;
+        zip_entry_binary = Some(
+            file.name()
+                .map(|n| n.ends_with(".portfolio"))
+                .unwrap_or(false),
+        );
         let mut buf = Vec::new();
-        file.read_to_end(&mut buf).map_err(|e| ImportError::Format(format!("ZIP lesen: {e}")))?;
+        file.read_to_end(&mut buf)
+            .map_err(|e| ImportError::Format(format!("ZIP lesen: {e}")))?;
         unzipped = buf;
         data = &unzipped;
     }
@@ -95,23 +106,40 @@ pub fn read_client(bytes: &[u8], password: Option<&str>) -> Result<ImportResult,
         let text = text.trim_start_matches('\u{feff}');
         let id_refs = text[..text.len().min(200)].contains("<client id=");
         let (c, w) = xml::read_xml(text)?;
-        (c, w, if id_refs { FileFormat::XmlIdReferences } else { FileFormat::Xml })
+        (
+            c,
+            w,
+            if id_refs {
+                FileFormat::XmlIdReferences
+            } else {
+                FileFormat::Xml
+            },
+        )
     };
 
     if client.version > MAX_SUPPORTED_VERSION {
-        return Err(ImportError::UnsupportedVersion(client.version, MAX_SUPPORTED_VERSION));
+        return Err(ImportError::UnsupportedVersion(
+            client.version,
+            MAX_SUPPORTED_VERSION,
+        ));
     }
 
     let file_version = client.version;
     upgrade::upgrade(&mut client, &mut warnings);
     client.normalize();
 
-    let info = ImportInfo { format, encrypted, compressed, version: file_version, warnings };
+    let info = ImportInfo {
+        format,
+        encrypted,
+        compressed,
+        version: file_version,
+        warnings,
+    };
     Ok(ImportResult { client, info })
 }
 
 fn decrypt(bytes: &[u8], password: &str) -> Result<Vec<u8>, ImportError> {
-    use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+    use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
 
     let rest = &bytes[SIG_ENCRYPTED.len()..];
     if rest.len() < 17 {
@@ -144,11 +172,14 @@ fn decrypt(bytes: &[u8], password: &str) -> Result<Vec<u8>, ImportError> {
     }
     let content_type = i32::from_be_bytes(plain[0..4].try_into().unwrap());
     let version = i32::from_be_bytes(plain[4..8].try_into().unwrap());
-    if !(1..=2).contains(&content_type) || version < 1 || version > MAX_SUPPORTED_VERSION + 20 {
+    if !(1..=2).contains(&content_type) || !(1..=MAX_SUPPORTED_VERSION + 20).contains(&version) {
         return Err(ImportError::WrongPassword);
     }
     if version > MAX_SUPPORTED_VERSION {
-        return Err(ImportError::UnsupportedVersion(version, MAX_SUPPORTED_VERSION));
+        return Err(ImportError::UnsupportedVersion(
+            version,
+            MAX_SUPPORTED_VERSION,
+        ));
     }
     Ok(plain[8..].to_vec())
 }
