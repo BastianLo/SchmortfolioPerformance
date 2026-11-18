@@ -1,5 +1,6 @@
 //! HTTP API (`/api/v1`) and OpenAPI document.
 
+pub mod admin;
 mod clients;
 mod data;
 mod dto;
@@ -47,6 +48,7 @@ fn api_router() -> OpenApiRouter<SharedState> {
         .merge(imports::router())
         .merge(plans::router())
         .merge(edit::router())
+        .merge(admin::router())
 }
 
 pub fn openapi_json() -> String {

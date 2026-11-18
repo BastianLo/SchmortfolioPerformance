@@ -30,6 +30,7 @@ pub struct Config {
     pub disable_local_login: bool,
     pub ecb_update: bool,
     pub quote_update: bool,
+    pub backup_keep: usize,
     pub max_upload_mb: usize,
     pub oidc: Option<OidcConfig>,
 }
@@ -101,6 +102,9 @@ impl Config {
             disable_local_login: flag("PP_DISABLE_LOCAL_LOGIN", false),
             ecb_update: flag("PP_ECB_UPDATE", true),
             quote_update: flag("PP_QUOTE_UPDATE", true),
+            backup_keep: var("PP_BACKUP_KEEP")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(14),
             max_upload_mb: var("PP_MAX_UPLOAD_MB")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),

@@ -49,5 +49,15 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": "http://localhost:8080" },
   },
-  build: { chunkSizeWarningLimit: 1500 },
+  build: {
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ["echarts"],
+          react: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query", "@tanstack/react-table"],
+        },
+      },
+    },
+  },
 });

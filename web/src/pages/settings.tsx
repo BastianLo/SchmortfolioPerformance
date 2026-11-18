@@ -10,6 +10,7 @@ import { Field, Input } from "@/components/ui/input";
 import { ErrorBox, PageHeader, Spinner } from "@/components/ui/misc";
 import { useClientId } from "@/lib/client-id";
 import { date } from "@/lib/format";
+import { BackupsCard, PasswordCard, TokensCard, UsersCard } from "./settings-admin";
 
 export function SettingsPage() {
   const clientId = useClientId();
@@ -117,6 +118,10 @@ export function SettingsPage() {
           </CardBody>
         </Card>
         {me?.is_admin && <FeedSettingsCard />}
+        <PasswordCard />
+        <TokensCard />
+        {me?.is_admin && <UsersCard />}
+        {me?.is_admin && <BackupsCard />}
         <Card>
           <CardHeader title="Über" />
           <CardBody className="space-y-2 text-sm text-muted">

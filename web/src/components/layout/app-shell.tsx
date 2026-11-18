@@ -261,7 +261,7 @@ export function AppShell() {
           <Sidebar />
           <div className="min-w-0 flex-1">
             <MobileNav />
-            <main className="mx-auto max-w-7xl px-4 pt-4 pb-24 sm:px-6 sm:pt-6 lg:px-8 lg:pb-10">
+            <main className="mx-auto max-w-7xl overflow-x-clip px-4 pt-4 pb-24 sm:px-6 sm:pt-6 lg:px-8 lg:pb-10">
               <Outlet />
             </main>
           </div>

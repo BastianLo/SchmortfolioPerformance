@@ -105,6 +105,15 @@ fn meta_from_row(r: &sqlx::sqlite::SqliteRow) -> ClientMeta {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ApiToken {
+    pub id: String,
+    pub name: String,
+    pub read_only: bool,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Attachment {
     pub file_hash: String,
     pub file_name: String,
@@ -237,6 +246,127 @@ impl Db {
         .bind(user_id)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    pub async fn list_users(&self) -> Result<Vec<User>> {
+        let rows = sqlx::query("SELECT * FROM users ORDER BY username")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.iter().map(user_from_row).collect())
+    }
+
+    pub async fn set_password(&self, user_id: &str, hash: &str) -> Result<()> {
+        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+            .bind(hash)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_admin(&self, user_id: &str, admin: bool) -> Result<()> {
+        sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
+            .bind(admin as i64)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_user(&self, user_id: &str) -> Result<()> {
+        let r = sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    // --------------------------------------------------------------- tokens
+
+    pub async fn create_token(
+        &self,
+        user_id: &str,
+        name: &str,
+        token_hash: &str,
+        read_only: bool,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query("INSERT INTO api_tokens (id, user_id, name, token_hash, read_only, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind(&id)
+            .bind(user_id)
+            .bind(name)
+            .bind(token_hash)
+            .bind(read_only as i64)
+            .bind(now())
+            .execute(&self.pool)
+            .await?;
+        Ok(id)
+    }
+
+    pub async fn list_tokens(&self, user_id: &str) -> Result<Vec<ApiToken>> {
+        let rows = sqlx::query("SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at")
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| ApiToken {
+                id: r.get("id"),
+                name: r.get("name"),
+                read_only: r.get::<i64, _>("read_only") != 0,
+                created_at: r.get("created_at"),
+                last_used_at: r.get("last_used_at"),
+            })
+            .collect())
+    }
+
+    pub async fn delete_token(&self, user_id: &str, id: &str) -> Result<()> {
+        let r = sqlx::query("DELETE FROM api_tokens WHERE user_id = ? AND id = ?")
+            .bind(user_id)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    /// Returns the user and the read-only flag of a token.
+    pub async fn token_user(&self, token_hash: &str) -> Result<Option<(User, bool)>> {
+        let r = sqlx::query("SELECT u.*, t.read_only AS t_read_only, t.id AS t_id FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?")
+            .bind(token_hash)
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(r) = r else { return Ok(None) };
+        let tid: String = r.get("t_id");
+        sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+            .bind(now())
+            .bind(tid)
+            .execute(&self.pool)
+            .await?;
+        Ok(Some((
+            user_from_row(&r),
+            r.get::<i64, _>("t_read_only") != 0,
+        )))
+    }
+
+    // ---------------------------------------------------------------- backup
+
+    /// Writes a consistent copy of the database (SQLite `VACUUM INTO`).
+    pub async fn backup_to(&self, path: &str) -> Result<()> {
+        // a bound parameter is not reliably honoured by VACUUM INTO; quote the
+        // path as SQL string literal instead
+        let sql = format!("VACUUM INTO '{}'", path.replace('\'', "''"));
+        sqlx::query(&sql).execute(&self.pool).await?;
         Ok(())
     }
 
@@ -1412,5 +1542,41 @@ mod tests {
                 .transactions
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn token_lookup() {
+        let file = std::env::temp_dir().join(format!("pp-src-{}.db", uuid::Uuid::new_v4()));
+        let db = Db::connect(&format!("sqlite://{}", file.display()))
+            .await
+            .unwrap();
+        let u = db
+            .create_user(NewUser {
+                username: "a",
+                email: None,
+                display_name: None,
+                password_hash: None,
+                is_admin: false,
+                oidc_issuer: None,
+                oidc_subject: None,
+            })
+            .await
+            .unwrap();
+        db.create_token(&u.id, "t", "hash1", true).await.unwrap();
+        let r = db.token_user("hash1").await;
+        assert!(matches!(r, Ok(Some(_))), "{r:?}");
+        let path = std::env::temp_dir().join(format!("pp-backup-{}.db", uuid::Uuid::new_v4()));
+        let r = db.backup_to(&path.to_string_lossy()).await;
+        eprintln!("backup result {r:?} path {}", path.display());
+        assert!(
+            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > 0,
+            "backup file missing"
+        );
+        let _ = std::fs::remove_file(path);
     }
 }

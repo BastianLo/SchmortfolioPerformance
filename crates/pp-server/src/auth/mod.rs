@@ -65,6 +65,23 @@ impl FromRequestParts<SharedState> for CurrentUser {
         parts: &mut Parts,
         state: &SharedState,
     ) -> Result<Self, Self::Rejection> {
+        // personal access tokens: "Authorization: Bearer pp_…"
+        if let Some(token) = parts
+            .headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.strip_prefix("Bearer "))
+        {
+            let (user, read_only) = state
+                .db
+                .token_user(&token_hash(token.trim()))
+                .await?
+                .ok_or(ApiError::Unauthorized)?;
+            if read_only && !matches!(parts.method, Method::GET | Method::HEAD) {
+                return Err(ApiError::Forbidden);
+            }
+            return Ok(CurrentUser(user));
+        }
         let jar = CookieJar::from_headers(&parts.headers);
         let token = jar
             .get(SESSION_COOKIE)
@@ -294,8 +311,117 @@ async fn me(CurrentUser(user): CurrentUser) -> Json<Me> {
     Json(Me::from(&user))
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct PasswordChange {
+    /// current password (not needed if the user has none yet, e.g. SSO)
+    pub current: Option<String>,
+    pub new: String,
+}
+
+#[utoipa::path(post, path = "/auth/password", tag = "auth", request_body = PasswordChange, responses((status = 204), (status = 401)))]
+async fn change_password(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Json(p): Json<PasswordChange>,
+) -> ApiResult<StatusCode> {
+    if let Some(h) = &user.password_hash
+        && !verify_password(p.current.as_deref().unwrap_or_default(), h)
+    {
+        return Err(ApiError::Unauthorized);
+    }
+    if p.new.len() < 8 {
+        return Err(ApiError::BadRequest(
+            "Passwort muss mindestens 8 Zeichen haben".into(),
+        ));
+    }
+    state
+        .db
+        .set_password(&user.id, &hash_password(&p.new)?)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TokenDto {
+    pub id: String,
+    pub name: String,
+    pub read_only: bool,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct TokenInput {
+    pub name: String,
+    #[serde(default = "yes")]
+    pub read_only: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CreatedToken {
+    pub id: String,
+    /// shown only once; use as `Authorization: Bearer <token>`
+    pub token: String,
+}
+
+#[utoipa::path(get, path = "/auth/tokens", tag = "auth", responses((status = 200, body = Vec<TokenDto>)))]
+async fn list_tokens(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+) -> ApiResult<Json<Vec<TokenDto>>> {
+    Ok(Json(
+        state
+            .db
+            .list_tokens(&user.id)
+            .await?
+            .into_iter()
+            .map(|t| TokenDto {
+                id: t.id,
+                name: t.name,
+                read_only: t.read_only,
+                created_at: t.created_at,
+                last_used_at: t.last_used_at,
+            })
+            .collect(),
+    ))
+}
+
+#[utoipa::path(post, path = "/auth/tokens", tag = "auth", request_body = TokenInput, responses((status = 201, body = CreatedToken)))]
+async fn create_token(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Json(t): Json<TokenInput>,
+) -> ApiResult<(StatusCode, Json<CreatedToken>)> {
+    if t.name.trim().is_empty() {
+        return Err(ApiError::BadRequest("Name fehlt".into()));
+    }
+    let token = format!("pp_{}", random_token());
+    let id = state
+        .db
+        .create_token(&user.id, t.name.trim(), &token_hash(&token), t.read_only)
+        .await?;
+    Ok((StatusCode::CREATED, Json(CreatedToken { id, token })))
+}
+
+#[utoipa::path(delete, path = "/auth/tokens/{tid}", tag = "auth", params(("tid" = String, Path)), responses((status = 204)))]
+async fn delete_token(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    axum::extract::Path(tid): axum::extract::Path<String>,
+) -> ApiResult<StatusCode> {
+    state.db.delete_token(&user.id, &tid).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn router() -> OpenApiRouter<SharedState> {
     OpenApiRouter::new()
+        .routes(routes!(change_password))
+        .routes(routes!(list_tokens, create_token))
+        .routes(routes!(delete_token))
         .routes(routes!(auth_config))
         .routes(routes!(setup))
         .routes(routes!(login))

@@ -28,6 +28,7 @@ fn test_config() -> Config {
         disable_local_login: false,
         ecb_update: false,
         quote_update: false,
+        backup_keep: 2,
         max_upload_mb: 50,
         oidc: None,
     }
@@ -1172,5 +1173,179 @@ async fn edit_watchlists_and_taxonomies() {
         .await
         .status,
         StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn tokens_users_and_backups() {
+    let mut config = test_config();
+    std::fs::create_dir_all(&config.data_dir).unwrap();
+    config.database_url = format!("sqlite://{}/test.db", config.data_dir);
+    let (app, _) = app_with(config, None).await;
+    let cookie = setup_admin(&app).await;
+    // API token, read only
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/auth/tokens",
+        Some(json!({"name": "Home Assistant"})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let token = r.json["token"].as_str().unwrap().to_string();
+    let bearer = |method: &str, uri: &str| {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let res = app
+        .clone()
+        .oneshot(bearer("GET", "/api/v1/clients"))
+        .await
+        .unwrap();
+    let st = res.status();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(st, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        app.clone()
+            .oneshot(bearer("POST", "/api/v1/clients/demo"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let list = call(&app, "GET", "/api/v1/auth/tokens", None, Some(&cookie)).await;
+    assert!(list.json[0]["last_used_at"].is_string());
+    let tid = list.json[0]["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/auth/tokens/{tid}"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(bearer("GET", "/api/v1/clients"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    // users
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/admin/users",
+        Some(json!({"username": "bob", "password": "bobbobbob"})),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let bob_id = r.json["id"].as_str().unwrap().to_string();
+    let bob = session_cookie(
+        &call(
+            &app,
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({"username": "bob", "password": "bobbobbob"})),
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        call(&app, "GET", "/api/v1/admin/users", None, Some(&bob))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    // bob cannot see admin's clients
+    let demo = call(&app, "POST", "/api/v1/clients/demo", None, Some(&cookie))
+        .await
+        .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/v1/clients/{demo}"),
+            None,
+            Some(&bob)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    // password change
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        Some(json!({"current": "falsch", "new": "neuesPasswort"})),
+        Some(&bob),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        Some(json!({"current": "bobbobbob", "new": "neuesPasswort"})),
+        Some(&bob),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/v1/admin/users/{bob_id}"),
+            None,
+            Some(&cookie)
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // backups, keeps 2
+    for _ in 0..3 {
+        assert_eq!(
+            call(&app, "POST", "/api/v1/admin/backups", None, Some(&cookie))
+                .await
+                .status,
+            StatusCode::CREATED
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    }
+    let l = call(&app, "GET", "/api/v1/admin/backups", None, Some(&cookie)).await;
+    assert_eq!(l.json.as_array().unwrap().len(), 2);
+    let name = l.json[0]["name"].as_str().unwrap();
+    let req = Request::builder()
+        .uri(format!("/api/v1/admin/backups/{name}"))
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .starts_with(b"SQLite format 3")
     );
 }

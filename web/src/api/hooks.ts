@@ -137,7 +137,11 @@ export function useTaxonomy(id: string, tid: string | undefined, filter?: string
   return useQuery({
     queryKey: [...qk.client(id), "taxonomy", tid, filter],
     queryFn: () =>
-      unwrap(api.GET("/clients/{id}/reports/taxonomies/{tid}", { params: { path: { id, tid: tid as string } } })),
+      unwrap(
+        api.GET("/clients/{id}/reports/taxonomies/{tid}", {
+          params: { path: { id, tid: tid as string }, query: { filter } },
+        }),
+      ),
     enabled: !!tid,
   });
 }

@@ -22,6 +22,15 @@ pub fn spawn(state: SharedState) {
             if let Err(e) = crate::api::plans::execute_all(&state).await {
                 tracing::warn!("investment plans failed: {e:#}");
             }
+            if state.config.backup_keep > 0
+                && state.config.database_url.starts_with("sqlite://")
+                && crate::api::admin::backup_due(&state).await
+            {
+                match crate::api::admin::create_backup(&state).await {
+                    Ok(n) => tracing::info!("backup {n} created"),
+                    Err(e) => tracing::warn!("backup failed: {e:#}"),
+                }
+            }
             if let Ok(n) = state.db.purge_sessions().await
                 && n > 0
             {
