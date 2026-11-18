@@ -11,7 +11,7 @@ Sie soll moderner, schneller und mobil nutzbar sein und PP-Dateien verlustfrei i
 
 | Frage | Annahme für v1 |
 |---|---|
-| Benutzer | Mehrbenutzerfähig im Datenmodell (`user` → `client`). Standard ist ein einzelner Admin-Account, Haushalt mit Rollen kommt später. |
+| Benutzer | Mehrbenutzerfähig im Datenmodell (`user` → `client`). Login lokal oder per OIDC (SSO). Haushalt mit Freigaben kommt später. |
 | Offline | v1: Offline-**Lesen** über den Service-Worker-Cache. Offline-Erfassung erst ab M8 (local-first über WASM-Rechenkern). |
 | Priorität | Zuerst **PP-Import + Auswertungen** (das ist der Migrationsgrund), danach Erfassung, Kurse und PDF-Import. |
 | Datenbank | SQLite als Standard (eine Datei, ein Container), Postgres optional. |
@@ -45,7 +45,7 @@ Sie soll moderner, schneller und mobil nutzbar sein und PP-Dateien verlustfrei i
 
 **Grundprinzipien**
 1. **`pp-core` ist rein:** keine Datenbank, kein Netzwerk, keine Uhr. Eingabe sind Daten, Ausgabe sind Ergebnisse. Dadurch ist es deterministisch testbar und nach WASM kompilierbar.
-2. **Ganzzahl-Arithmetik:** Geld als `i64` in Minor Units ×100 (wie PP), Stückzahl als `i64` ×10⁸, Kurse als `i64` ×10⁸. Zwischenergebnisse (Renditen, Gewichte) in `rust_decimal`. Kein `f64` in der Buchhaltung, `f64` nur für Chart-Ausgabe.
+2. **Ganzzahl-Arithmetik:** Geld als `i64` in Minor Units ×100 (wie PP), Stückzahl als `i64` ×10⁸, Kurse als `i64` ×10⁸. Wertberechnungen (Stück × Kurs, FX) in `rust_decimal` mit Rundung wie PP (HALF_UP). Renditen (TTWROR, IRR) in `f64`, genau wie PP, damit die Ergebnisse identisch sind. Kein `f64` für Geldbeträge.
 3. **Buchungen sind die Wahrheit, alles andere ist abgeleitet:** Bestände, Einstandswerte und Performance werden aus den Buchungen berechnet und gecacht (Snapshot-Cache, invalidiert ab dem frühesten geänderten Datum).
 4. **API-first:** Die OpenAPI-Spec wird aus dem Rust-Code erzeugt (`utoipa`), der TS-Client daraus generiert. Die öffentliche API ist zugleich ein Feature (Home Assistant, Skripte).
 
@@ -269,7 +269,14 @@ documents:
 
 ## 12. Sicherheit und Betrieb
 
-- **Auth:** lokaler Login (Argon2id), Session-Cookie (HttpOnly, SameSite=Lax, Secure), CSRF-Token für mutierende Requests, optional OIDC und Header-Auth hinter einem Reverse Proxy (`trusted proxy`-Konfiguration).
+- **Auth:** lokaler Login (Argon2id), Session-Cookie (HttpOnly, SameSite=Lax, Secure), CSRF-Schutz für mutierende Requests (SameSite + Origin-Prüfung), Header-Auth hinter einem Reverse Proxy (`trusted proxy`-Konfiguration) später.
+- **OIDC (ab M1):** Authorization Code Flow mit PKCE, getestet gegen Authentik, Authelia, Keycloak, Pocket ID, Zitadel.
+  - Konfiguration per Env: `PP_OIDC_ISSUER`, `PP_OIDC_CLIENT_ID`, `PP_OIDC_CLIENT_SECRET`, `PP_OIDC_REDIRECT_URL` (Standard `<PP_PUBLIC_URL>/api/v1/auth/oidc/callback`), `PP_OIDC_SCOPES` (Standard `openid profile email`), `PP_OIDC_BUTTON_LABEL`.
+  - Benutzerzuordnung über `(issuer, sub)`; optional Verknüpfung mit vorhandenem lokalem Konto über die verifizierte E-Mail (`PP_OIDC_LINK_BY_EMAIL=true`).
+  - Automatisches Anlegen neuer Benutzer (`PP_OIDC_AUTO_REGISTER`, Standard `true`).
+  - Zugriff und Rollen über einen Gruppen-Claim: `PP_OIDC_GROUPS_CLAIM` (Standard `groups`), `PP_OIDC_ALLOWED_GROUPS`, `PP_OIDC_ADMIN_GROUPS`.
+  - Lokaler Login abschaltbar (`PP_DISABLE_LOCAL_LOGIN=true`), dann nur SSO.
+  - RP-initiated Logout (`end_session_endpoint`), falls der Provider es anbietet.
 - Erster Start: Setup-Assistent legt den Admin an (oder Env-Variablen `PP_ADMIN_*`).
 - Rate-Limit auf Login, Sicherheits-Header (CSP, HSTS über den Proxy).
 - **Backups:** täglicher SQLite-Snapshot (`VACUUM INTO`) nach `/data/backups`, Rotation, Download im UI. Export als PP-XML und JSON.
@@ -303,7 +310,7 @@ documents:
 | # | Meilenstein | Inhalt | Abnahmekriterium |
 |---|---|---|---|
 | **M0** | Fundament (1–2 Wo.) | Cargo-Workspace, `web/` mit Vite/React/Tailwind/shadcn, Axum-Hello-World mit eingebettetem Frontend, SQLx-Migrationen, CI, Dockerfile, Lizenzentscheidung, ADR-001 (Architektur) | `docker compose up` liefert die App aus, CI ist grün |
-| **M1** | Domänenmodell + Persistenz (2–3 Wo.) | `pp-core`-Modell (Money/Quantity/Transaktions-Enums), DB-Schema, Repository-Layer, CRUD-API für Wertpapiere/Konten/Depots/Buchungen, OpenAPI + generierter Client, Auth (lokal) | Buchungen per API anlegen und lesen; E2E-Login |
+| **M1** | Domänenmodell + Persistenz (2–3 Wo.) | `pp-core`-Modell (Money/Quantity/Transaktions-Enums), DB-Schema, Repository-Layer, CRUD-API für Wertpapiere/Konten/Depots/Buchungen, OpenAPI + generierter Client, Auth (lokal + **OIDC**) | Buchungen per API anlegen und lesen; E2E-Login lokal und per OIDC |
 | **M2** | PP-Import (3–4 Wo.) | XML- und Protobuf-Parser, Referenzauflösung, Verschlüsselung, Mapping → DB, Dry-Run + Vorschau-UI, Testkorpus | 5 Testdateien vollständig importiert; Anzahl der Entitäten stimmt 100 % |
 | **M3** | Rechenkern I (3–4 Wo.) | Währungsumrechnung, Snapshot, Vermögensaufstellung, FIFO/Einstand, realisierte/unrealisierte G/V, Dividendenübersicht | Golden Tests: Bestände und Werte zum Stichtag identisch mit PP |
 | **M4** | Rechenkern II + Auswertungs-UI (3–4 Wo.) | PerformanceIndex, TTWROR, IRR, Drawdown, Volatilität, Filter, Caching; Dashboard, Vermögensaufstellung, Performance-Seite, Wertpapier-Detail mit Charts | Golden Tests Performance innerhalb der Toleranz; Benchmark-Ziel aus 6.2 erreicht |
@@ -312,7 +319,7 @@ documents:
 | **M6** | Mobile + PWA (2 Wo.) | Responsive-Pass über alle Seiten, Bottom-Nav, Karten-Layouts, Manifest, Service Worker, Offline-Lesen, Install-Prompt | Lighthouse ≥ 90; installierbar auf iOS und Android |
 | **M7** | Import-Ausbau (4+ Wo., fortlaufend) | PDF-Regelengine + DSL, erste 5–10 Banken, CSV-Assistent, Duplikaterkennung, Belege als Anhang, PP-XML-Export | Top-5-Banken mit Testabdeckung; Roundtrip-Test PP → App → PP |
 | **🚀 Beta / v1.0** | | Klassifizierungen + Rebalancing, Watchlists, Sparpläne, Backups, Doku, Multi-Arch-Release auf GHCR | Öffentliches Release |
-| **M8** | Danach | WASM-Rechenkern im Browser, Offline-Erfassung mit Sync, Mehrbenutzer/Haushalt, OIDC, Kursalarme/Push, Steuer-Features DE, Home-Assistant-Integration | – |
+| **M8** | Danach | WASM-Rechenkern im Browser, Offline-Erfassung mit Sync, Mehrbenutzer/Haushalt mit Freigaben, Kursalarme/Push, Steuer-Features DE, Home-Assistant-Integration | – |
 
 Die Zeitangaben gelten grob für eine Person in Teilzeit mit KI-Unterstützung. Die Reihenfolge ist wichtiger als die Dauer.
 

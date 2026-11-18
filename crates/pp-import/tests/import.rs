@@ -1,0 +1,123 @@
+use std::path::PathBuf;
+
+use pp_core::model::Client;
+use pp_import::{read_client, FileFormat, ImportError};
+
+fn testdata(rel: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/pp").join(rel)
+}
+
+fn load(rel: &str, pwd: Option<&str>) -> pp_import::ImportResult {
+    let bytes = std::fs::read(testdata(rel)).unwrap();
+    read_client(&bytes, pwd).unwrap_or_else(|e| panic!("{rel}: {e}"))
+}
+
+/// A summary that must be identical for the same client stored in different
+/// formats.
+fn fingerprint(c: &Client) -> String {
+    let mut out = String::new();
+    out += &format!("base={} sec={} acc={} pf={} tax={}\n", c.base_currency, c.securities.len(), c.accounts.len(), c.portfolios.len(), c.taxonomies.len());
+    let mut secs: Vec<_> = c.securities.iter().map(|s| format!("{} {} prices={} latest={:?}", s.id, s.name, s.prices.len(), s.latest.as_ref().map(|l| l.value))).collect();
+    secs.sort();
+    out += &secs.join("\n");
+    for a in &c.accounts {
+        let mut txs: Vec<_> = a
+            .transactions
+            .iter()
+            .map(|t| format!("{} {:?} {} {} {} sh={} sec={:?} units={}", t.id, t.kind, t.date_time, t.currency, t.amount, t.shares, t.security, t.units.len()))
+            .collect();
+        txs.sort();
+        out += &format!("\nACC {} {} {}\n{}", a.id, a.name, a.currency, txs.join("\n"));
+    }
+    for p in &c.portfolios {
+        let mut txs: Vec<_> = p
+            .transactions
+            .iter()
+            .map(|t| format!("{} {:?} {} {} {} sh={} sec={:?} units={} cross={:?}", t.id, t.kind, t.date_time, t.currency, t.amount, t.shares, t.security, t.units.len(), t.cross_entry.as_ref().map(|c| &c.other_transaction)))
+            .collect();
+        txs.sort();
+        out += &format!("\nPF {} {} ref={:?}\n{}", p.id, p.name, p.reference_account, txs.join("\n"));
+    }
+    out
+}
+
+#[test]
+fn reads_all_historic_file_versions_identically() {
+    for v in ["client52", "client53", "client69"] {
+        let xml = load(&format!("fileversions/{v}.xml"), None);
+        assert_eq!(xml.info.format, FileFormat::Xml);
+        let bin = load(&format!("fileversions/{v}.binary.portfolio"), None);
+        assert_eq!(bin.info.format, FileFormat::Binary);
+        let bin_pwd = load(&format!("fileversions/{v}.binary+pwd.portfolio"), Some("123456"));
+        assert!(bin_pwd.info.encrypted);
+
+        let f = fingerprint(&xml.client);
+        assert!(!xml.client.accounts.is_empty() || !xml.client.securities.is_empty(), "{v} empty");
+        assert_eq!(f, fingerprint(&bin.client), "{v}: xml vs binary");
+        assert_eq!(f, fingerprint(&bin_pwd.client), "{v}: xml vs encrypted binary");
+
+        let xml_pwd = testdata(&format!("fileversions/{v}.xml+pwd.portfolio"));
+        if xml_pwd.exists() {
+            let r = load(&format!("fileversions/{v}.xml+pwd.portfolio"), Some("123456"));
+            assert_eq!(f, fingerprint(&r.client), "{v}: xml vs encrypted xml");
+        }
+    }
+}
+
+#[test]
+fn encrypted_requires_correct_password() {
+    let bytes = std::fs::read(testdata("fileversions/client69.binary+pwd.portfolio")).unwrap();
+    assert!(matches!(read_client(&bytes, None), Err(ImportError::PasswordRequired)));
+    assert!(matches!(read_client(&bytes, Some("wrong")), Err(ImportError::WrongPassword)));
+}
+
+#[test]
+fn id_and_relative_references_resolve_to_same_model() {
+    let a = load("fileversions/client_with_id_references.xml", None);
+    assert_eq!(a.info.format, FileFormat::XmlIdReferences);
+    let b = load("fileversions/client_with_relative_references.xml", None);
+    assert_eq!(a.client.securities.len(), 2);
+    // the 'latest' price is shared via reference in both files
+    assert!(a.client.securities.iter().all(|s| s.latest.is_some()));
+    assert_eq!(fingerprint(&a.client), fingerprint(&b.client));
+}
+
+#[test]
+fn reads_all_scenario_and_issue_files() {
+    for dir in ["scenarios", "issues"] {
+        for entry in std::fs::read_dir(testdata(dir)).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = format!("{dir}/{}", path.file_name().unwrap().to_string_lossy());
+            let r = load(&rel, None);
+            assert!(r.info.warnings.iter().all(|w| !w.contains("Unaufgelöste")), "{rel}: {:?}", r.info.warnings);
+            // cross entries must point to existing transactions
+            for p in &r.client.portfolios {
+                for t in &p.transactions {
+                    if let Some(ce) = &t.cross_entry {
+                        let found = r.client.accounts.iter().any(|a| a.id == ce.other_owner && a.transactions.iter().any(|x| x.id == ce.other_transaction))
+                            || r.client.portfolios.iter().any(|a| a.id == ce.other_owner && a.transactions.iter().any(|x| x.id == ce.other_transaction));
+                        assert!(found, "{rel}: dangling cross entry {}", t.id);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn reads_demo_file_with_inline_definitions() {
+    let r = load("kommer.xml", None);
+    let c = &r.client;
+    assert_eq!(c.securities.len(), 15, "{:?}", r.info.warnings);
+    assert!(c.accounts.len() >= 4);
+    assert_eq!(c.portfolios.len(), 2);
+    assert_eq!(c.taxonomies.len(), 5);
+    let buys: usize = c.portfolios.iter().map(|p| p.transactions.len()).sum();
+    assert!(buys > 0);
+    // every security referenced by a transaction exists
+    for p in &c.portfolios {
+        for t in &p.transactions {
+            assert!(c.security(t.security.as_deref().unwrap()).is_some());
+        }
+    }
+}
