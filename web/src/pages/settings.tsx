@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import * as React from "react";
 import { api, unwrap } from "@/api/client";
 import { qk, useClient, useExchangeRates, useMe } from "@/api/hooks";
@@ -79,9 +79,16 @@ export function SettingsPage() {
                 <dd>{client.pp_version}</dd>
               </dl>
             )}
-            <Button variant="danger" onClick={remove}>
-              Portfolio löschen
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <a href={`/api/v1/clients/${clientId}/export/pp-xml`} download>
+                  <Download /> Als PP-Datei exportieren
+                </a>
+              </Button>
+              <Button variant="danger" onClick={remove}>
+                Portfolio löschen
+              </Button>
+            </div>
           </CardBody>
         </Card>
         <Card>

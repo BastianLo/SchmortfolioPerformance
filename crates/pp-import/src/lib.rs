@@ -1,6 +1,7 @@
 //! Import of Portfolio Performance files (XML, binary/protobuf, encrypted,
 //! ZIP compressed).
 
+pub mod export;
 pub mod pdf;
 mod proto;
 mod upgrade;

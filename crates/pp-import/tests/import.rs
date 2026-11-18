@@ -207,3 +207,22 @@ fn reads_demo_file_with_inline_definitions() {
         }
     }
 }
+
+#[test]
+fn export_roundtrip_is_lossless() {
+    for f in ["kommer.xml", "scenarios/currency_sample.xml", "fileversions/client69.binary.portfolio", "scenarios/client_performance_snapshot.xml", "issues/Issue1498FifoCrossPortfolio.xml"] {
+        let a = load(f, None).client;
+        let xml = pp_import::export::to_pp_xml(&a);
+        assert!(xml.starts_with("<client id=\"1\">"));
+        let b = read_client(xml.as_bytes(), None).unwrap_or_else(|e| panic!("{f}: {e}")).client;
+        assert_eq!(fingerprint(&a), fingerprint(&b), "{f}");
+        // taxonomies with assignments survive
+        let count = |c: &Client| c.taxonomies.iter().flat_map(|t| t.classifications.iter()).map(|c| c.assignments.len()).sum::<usize>();
+        assert_eq!(count(&a), count(&b), "{f}");
+        // units and cross entries survive
+        let units = |c: &Client| c.portfolios.iter().flat_map(|p| p.transactions.iter()).map(|t| format!("{:?}", t.units)).collect::<Vec<_>>();
+        assert_eq!(units(&a), units(&b), "{f}");
+        let x = |c: &Client| c.accounts.iter().flat_map(|p| p.transactions.iter()).filter_map(|t| t.cross_entry.as_ref().map(|c| (c.kind, c.other_transaction.clone()))).collect::<Vec<_>>();
+        assert_eq!(x(&a), x(&b), "{f}");
+    }
+}

@@ -279,10 +279,31 @@ async fn create_demo(
     Ok((StatusCode::CREATED, Json(ClientDto::from(&meta))))
 }
 
+/// Exports the client as Portfolio Performance XML file.
+#[utoipa::path(get, path = "/clients/{id}/export/pp-xml", tag = "clients", params(("id" = String, Path)), responses((status = 200, content_type = "application/xml")))]
+async fn export_pp_xml(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<String>,
+) -> ApiResult<axum::response::Response> {
+    let c = state.client(&user, &id).await?;
+    let xml = tokio::task::spawn_blocking(move || pp_import::export::to_pp_xml(&c.client))
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let meta = state.db.client_meta(&id).await?;
+    let name: String = meta.name.chars().filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' ')).collect();
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/xml; charset=utf-8")
+        .header("content-disposition", format!("attachment; filename=\"{}.xml\"", name.trim()))
+        .body(axum::body::Body::from(xml))
+        .unwrap())
+}
+
 pub fn router() -> OpenApiRouter<SharedState> {
     OpenApiRouter::new()
         .routes(routes!(list_clients, create_client))
         .routes(routes!(import_client))
         .routes(routes!(create_demo))
+        .routes(routes!(export_pp_xml))
         .routes(routes!(get_client, update_client, delete_client))
 }
